@@ -1,0 +1,18 @@
+# Backend configuration template for PROD
+#
+# Copy this file to backend.hcl (gitignored) and fill in the values.
+# backend.hcl is never committed to Git.
+#
+# Usage:
+#   terraform init -backend-config=backend.hcl
+
+resource_group_name  = "rg-data-platform-tfstate"
+storage_account_name = "stdataplatformtfstate"
+container_name       = "tfstate"
+key                  = "data-platform/prod/terraform.tfstate"
+
+# Production with Azure AD authentication (no SAS token):
+# use_azuread_auth     = true
+# use_oidc             = true
+# subscription_id      = "<your-subscription-id>"
+# tenant_id            = "<your-tenant-id>"

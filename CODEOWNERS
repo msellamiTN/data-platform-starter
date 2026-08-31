@@ -1,0 +1,20 @@
+# CODEOWNERS
+#
+# Each line maps a path pattern to the team or individual responsible for it.
+# Azure DevOps and GitHub both use this file to request automatic review.
+
+# Default owner for the whole repository
+* @data-platform-team
+
+# Environments require platform team review
+/environments/ @platform-engineering
+
+# Modules require platform team review
+/modules/     @platform-engineering
+
+# Pipeline and CI/CD configuration requires DevOps team review
+/azure-pipelines.yml @devops-team
+/scripts/            @devops-team
+
+# Architecture decisions require architecture review
+/docs/adr/ @architecture

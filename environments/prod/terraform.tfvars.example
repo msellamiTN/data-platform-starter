@@ -1,0 +1,14 @@
+# Terraform variable file template for PROD
+#
+# Copy this file to terraform.tfvars (gitignored) and fill in the values.
+# terraform.tfvars is never committed to Git.
+#
+# Never put passwords, PATs or private keys in this file.
+# Use environment variables or Azure Key Vault for secrets.
+
+learner_prefix       = "ABC"
+environment          = "PROD"
+snowflake_account    = "<your-snowflake-account>"
+snowflake_organization = "<your-snowflake-organization>"
+snowflake_user       = "<your-snowflake-service-user>"
+snowflake_role       = "SYSADMIN"

@@ -1,0 +1,27 @@
+# Normalize line endings across Windows and Unix contributors
+* text=auto eol=lf
+
+# Terraform files are always text
+*.tf text eol=lf
+*.tfvars text eol=lf
+*.hcl text eol=lf
+
+# Shell scripts are always text with LF
+*.sh text eol=lf
+
+# PowerShell scripts are text with CRLF on Windows checkout
+*.ps1 text eol=crlf
+
+# Markdown and YAML are text
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary

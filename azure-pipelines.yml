@@ -1,0 +1,181 @@
+# Azure DevOps pipeline for the data-platform-starter project.
+#
+# Stages:
+#   1. validate  - fmt, validate, tflint
+#   2. plan      - terraform plan with artifact
+#   3. approval  - manual review gate
+#   4. apply     - terraform apply from the approved artifact
+#   5. audit     - drift detection
+#
+# Required pipeline variables (defined in Azure DevOps UI or variable groups):
+#   - ARM_SUBSCRIPTION_ID
+#   - ARM_TENANT_ID
+#   - SERVICE_CONNECTION_NAME
+#   - SNOWFLAKE_ORGANIZATION_NAME
+#   - SNOWFLAKE_ACCOUNT_NAME
+#   - SNOWFLAKE_USER
+#   - SNOWFLAKE_PRIVATE_KEY  (stored as a secret variable)
+#
+# Authentication uses Workload Identity Federation; no long-lived client secret.
+# The Snowflake private key is injected as an environment variable and never
+# written to disk or logs.
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    exclude:
+      - README.md
+      - docs/
+
+pr:
+  branches:
+    include:
+      - main
+      - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: data-platform-secrets
+  - name: TF_VERSION
+    value: '1.14.5'
+  - name: TF_IN_AUTOMATION
+    value: '1'
+
+stages:
+  - stage: Validate
+    displayName: 'Validate'
+    jobs:
+      - job: Validate
+        displayName: 'fmt, validate, tflint'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(TF_VERSION)'
+
+          - script: |
+              cd environments/dev
+              terraform fmt -check -recursive
+            displayName: 'terraform fmt -check'
+
+          - script: |
+              cd environments/dev
+              terraform init -backend=false
+              terraform validate
+            displayName: 'terraform validate'
+
+          - script: |
+              tflint --version
+              tflint -c ../../.tflint.hcl environments/dev
+            displayName: 'tflint'
+            continueOnError: true
+
+  - stage: Plan
+    displayName: 'Plan'
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: Plan
+        displayName: 'terraform plan'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(TF_VERSION)'
+
+          - task: AzureCLI@2
+            displayName: 'terraform plan'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION_NAME)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                cd environments/dev
+                terraform init -backend-config=backend.hcl
+                terraform plan -out=tfplan -input=false
+              addSpnToEnvironment: true
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish plan artifact'
+            inputs:
+              targetPath: 'environments/dev/tfplan'
+              artifact: 'tfplan'
+              publishLocation: 'pipeline'
+
+  - stage: Approval
+    displayName: 'Approval'
+    dependsOn: Plan
+    condition: succeeded()
+    jobs:
+      - job: Approval
+        displayName: 'Manual review'
+        pool: server
+        steps:
+          - task: ManualValidation@1
+            displayName: 'Review the plan'
+            inputs:
+              notifyUsers: ''
+              instructions: 'Review the terraform plan artifact before approval.'
+              onTimeout: 'reject'
+
+  - stage: Apply
+    displayName: 'Apply'
+    dependsOn: Approval
+    condition: succeeded()
+    jobs:
+      - job: Apply
+        displayName: 'terraform apply'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(TF_VERSION)'
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download plan artifact'
+            inputs:
+              artifact: 'tfplan'
+              path: 'environments/dev'
+
+          - task: AzureCLI@2
+            displayName: 'terraform apply'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION_NAME)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                cd environments/dev
+                terraform init -backend-config=backend.hcl
+                terraform apply -input=false tfplan
+              addSpnToEnvironment: true
+
+  - stage: Audit
+    displayName: 'Audit'
+    dependsOn: Apply
+    condition: succeededOrFailed()
+    jobs:
+      - job: Audit
+        displayName: 'Drift detection'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(TF_VERSION)'
+
+          - task: AzureCLI@2
+            displayName: 'terraform plan -detailed-exitcode'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION_NAME)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                cd environments/dev
+                terraform init -backend-config=backend.hcl
+                terraform plan -detailed-exitcode -out=drift.tfplan -input=false
+                echo "Drift check completed."
+              addSpnToEnvironment: true
