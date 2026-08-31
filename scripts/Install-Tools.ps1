@@ -351,8 +351,16 @@ function Initialize-TrainingVenv {
 
     if (-not (Test-Path $venvPython)) {
         Write-Host '       Creating the isolated virtual environment...' -ForegroundColor DarkGray
-        & python -m venv $VenvDir 2>&1 | Out-Null
+        $venvOutput = & python -m venv $VenvDir 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "       venv creation failed: $venvOutput" -ForegroundColor Red
+            return $false
+        }
     }
+
+    # Always ensure the venv Scripts dir is in PATH
+    Add-UserPath (Get-VenvScriptPath)
+    Sync-Path
 
     return (Test-Path $venvPython)
 }
@@ -364,10 +372,21 @@ function Install-VenvPackage {
     if (-not (Test-Path $venvPython)) { return $false }
 
     try {
-        & $venvPython -m pip install --upgrade pip 2>&1 | Out-Null
-        & $venvPython -m pip install @Specs 2>&1 | Out-Null
-        return $LASTEXITCODE -eq 0
+        Write-Host "       Upgrading pip..." -ForegroundColor DarkGray
+        & $venvPython -m pip install --upgrade pip 2>&1 |
+            ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+
+        Write-Host "       Installing: $($Specs -join ' ')" -ForegroundColor DarkGray
+        & $venvPython -m pip install @Specs 2>&1 |
+            ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "       pip install exited with code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+        return $true
     } catch {
+        Write-Host "       pip install exception: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
@@ -388,10 +407,6 @@ if ($snowVersion -and -not $Force) {
     $installed = $false
     if (Initialize-TrainingVenv) {
         $installed = Install-VenvPackage @('snowflake-cli')
-        if ($installed) {
-            Add-UserPath (Get-VenvScriptPath)
-            Sync-Path
-        }
     }
     $snowVersion = Get-ToolVersion 'snow' @('--version')
     if ($snowVersion) {
@@ -416,11 +431,9 @@ if ($dbtVersion -and -not $Force) {
 } else {
     $installed = $false
     if (Initialize-TrainingVenv) {
-        $installed = Install-VenvPackage @("dbt-core$($Policy.DbtSpec)", "dbt-snowflake$($Policy.DbtSpec)")
-        if ($installed) {
-            Add-UserPath (Get-VenvScriptPath)
-            Sync-Path
-        }
+        # Use pip constraint syntax that avoids shell escaping issues with '<'
+        $dbtSpec = $Policy.DbtSpec
+        $installed = Install-VenvPackage @("dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
     }
     $dbtVersion = Get-ToolVersion 'dbt' @('--version')
     if ($dbtVersion) {

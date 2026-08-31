@@ -61,7 +61,7 @@ flowchart LR
 ### 1. Cloner
 
 ```bash
-git clone <TEMPLATE_REPO_URL> ~/Data2AI-Labs/data-platform
+git clone https://github.com/msellamiTN/data-platform-starter.git ~/Data2AI-Labs/data-platform
 cd ~/Data2AI-Labs/data-platform
 ```
 

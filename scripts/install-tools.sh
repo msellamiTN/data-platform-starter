@@ -194,14 +194,22 @@ python_command() {
 init_venv() {
   local py
   py="$(python_command)" || return 1
-  [[ -x "${venv_bin}/python" ]] || "$py" -m venv "$venv_dir" >/dev/null 2>&1
+  if [[ ! -x "${venv_bin}/python" ]]; then
+    printf '       Creating the isolated virtual environment...\n' >&2
+    "$py" -m venv "$venv_dir" 2>&1 | sed 's/^/       /' >&2
+  fi
+  # Always ensure the venv bin dir is in PATH
+  add_user_path_hint "$venv_bin"
   [[ -x "${venv_bin}/python" ]]
 }
 
 install_venv_package() {
   [[ -x "${venv_bin}/python" ]] || return 1
-  "${venv_bin}/python" -m pip install --upgrade pip >/dev/null 2>&1
-  "${venv_bin}/python" -m pip install "$@" >/dev/null 2>&1
+  printf '       Upgrading pip...\n' >&2
+  "${venv_bin}/python" -m pip install --upgrade pip 2>&1 | sed 's/^/       /' >&2
+  printf '       Installing: %s\n' "$*" >&2
+  "${venv_bin}/python" -m pip install "$@" 2>&1 | sed 's/^/       /' >&2
+  return $?
 }
 
 # ------------------------------------------------------------------
