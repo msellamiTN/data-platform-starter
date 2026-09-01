@@ -65,6 +65,20 @@ $Policy = [ordered]@{
     DbtSpec      = '<3.0.0'
 }
 
+# Terraform providers (installed via terraform init, not by this script)
+$ProviderVersions = [ordered]@{
+    'snowflakedb/snowflake'      = '2.14.0'
+    'hashicorp/azurerm'          = '4.59.0'
+    'microsoft/azuredevops'      = '1.14.0'
+    'hashicorp/tls'              = '>= 4.0'
+}
+
+# dbt packages (installed via dbt deps, not by this script)
+$DbtPackages = [ordered]@{
+    'get-select/dbt_snowflake_monitoring' = '4.6.0'
+    'dbt-labs/dbt_utils'                  = '1.3.3'
+}
+
 $BinDir  = Join-Path $InstallRoot 'bin'
 $VenvDir = Join-Path $InstallRoot 'venv'
 
@@ -526,6 +540,22 @@ if ($SkipOptional) {
     } else {
         Add-Result 'OpenSSL' 'Optional' 'WARN' 'Not found' (Get-ManualStep 'OpenSSL')
     }
+}
+
+# ------------------------------------------------------------------
+# Terraform providers and dbt packages (informational — installed by terraform init / dbt deps)
+# ------------------------------------------------------------------
+
+Write-Section 'Terraform providers (installed by terraform init)'
+
+foreach ($kv in $ProviderVersions.GetEnumerator()) {
+    Write-Host ("  {0,-40} {1}" -f $kv.Key, $kv.Value) -ForegroundColor DarkGray
+}
+
+Write-Section 'dbt packages (installed by dbt deps)'
+
+foreach ($kv in $DbtPackages.GetEnumerator()) {
+    Write-Host ("  {0,-40} {1}" -f $kv.Key, $kv.Value) -ForegroundColor DarkGray
 }
 
 # ------------------------------------------------------------------

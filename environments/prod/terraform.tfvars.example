@@ -4,11 +4,13 @@
 # terraform.tfvars is never committed to Git.
 #
 # Never put passwords, PATs or private keys in this file.
-# Use environment variables or Azure Key Vault for secrets.
+# The PAT is passed via TF_VAR_snowflake_token environment variable.
 
-learner_prefix       = "ABC"
-environment          = "PROD"
-snowflake_account    = "<your-snowflake-account>"
-snowflake_organization = "<your-snowflake-organization>"
-snowflake_user       = "<your-snowflake-service-user>"
-snowflake_role       = "SYSADMIN"
+learner_prefix         = "ABC"
+environment            = "PROD"
+warehouse_size         = "X-SMALL"
+
+# Snowflake connection (from .env)
+snowflake_organization = "ZVFXOZW"
+snowflake_account      = "PM71247"
+snowflake_user         = "DATA2AI"

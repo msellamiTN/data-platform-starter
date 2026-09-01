@@ -29,6 +29,20 @@ POLICY_AZURE_CLI='2.83.0'
 POLICY_TFLINT='0.50.0'
 POLICY_DBT_SPEC='<3.0.0'
 
+# Terraform providers (installed via terraform init, not by this script)
+declare -A PROVIDER_VERSIONS=(
+  ['snowflakedb/snowflake']='2.14.0'
+  ['hashicorp/azurerm']='4.59.0'
+  ['microsoft/azuredevops']='1.14.0'
+  ['hashicorp/tls']='>= 4.0'
+)
+
+# dbt packages (installed via dbt deps, not by this script)
+declare -A DBT_PACKAGES=(
+  ['get-select/dbt_snowflake_monitoring']='4.6.0'
+  ['dbt-labs/dbt_utils']='1.3.3'
+)
+
 # ------------------------------------------------------------------
 # Arguments
 # ------------------------------------------------------------------
@@ -410,6 +424,20 @@ else
     add_result 'OpenSSL' 'Optional' 'WARN' 'Not found' "$(manual_step OpenSSL)"
   fi
 fi
+
+# ------------------------------------------------------------------
+# Terraform providers and dbt packages (informational)
+# ------------------------------------------------------------------
+
+section 'Terraform providers (installed by terraform init)'
+for key in "${!PROVIDER_VERSIONS[@]}"; do
+  printf '  %-40s %s\n' "$key" "${PROVIDER_VERSIONS[$key]}" >&2
+done
+
+section 'dbt packages (installed by dbt deps)'
+for key in "${!DBT_PACKAGES[@]}"; do
+  printf '  %-40s %s\n' "$key" "${DBT_PACKAGES[$key]}" >&2
+done
 
 # ------------------------------------------------------------------
 # Summary

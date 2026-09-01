@@ -1,44 +1,24 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-    Creates a Snowflake CLI connection using credentials from .env or a masked prompt.
+    Creates a Snowflake CLI connection using credentials from .env.
 
 .DESCRIPTION
-    This script reads .env from the project root if it exists. It uses the
-    Snowflake parameters found there. If a parameter is missing or .env does
-    not exist, the script prompts for it interactively.
+    Reads .env from the project root. All Snowflake parameters come from .env.
+    The PAT is read from SNOWFLAKE_PAT in .env, or from the file pointed to by
+    SNOWFLAKE_PAT_FILE. If neither is available, the script prompts for it
+    with a masked input.
 
-    The PAT is read from .env (SNOWFLAKE_PAT) or entered via a masked prompt.
-    It is never displayed, never logged, and never passed as a command-line
-    argument.
+    The token is written to secrets/snowflake_pat.txt and the connection is
+    created with --token-file-path so that 'snow sql -c training' works
+    standalone without exporting SNOWFLAKE_PAT each time.
 
-.PARAMETER ConnectionName
-    Name of the Snowflake CLI connection to create. Default: value from .env
-    or 'training'.
-
-.PARAMETER Organization
-    Snowflake organization name. Overrides .env.
-
-.PARAMETER Account
-    Snowflake account identifier. Overrides .env.
-
-.PARAMETER User
-    Snowflake user name. Overrides .env.
-
-.PARAMETER Role
-    Snowflake role to use. Overrides .env.
-
-.PARAMETER Host
-    Optional Snowflake host override. Overrides .env.
+    The PAT is never displayed, never logged, and never passed as a
+    command-line argument.
 
 .EXAMPLE
     .\scripts\New-SnowflakeConnection.ps1
     # Reads everything from .env
-
-.EXAMPLE
-    .\scripts\New-SnowflakeConnection.ps1 -ConnectionName training `
-        -Organization MYORG -Account MYACCOUNT -User DATA2AI -Role SYSADMIN
-    # Overrides .env with explicit values
 #>
 
 [CmdletBinding()]
@@ -48,10 +28,13 @@ param(
     [string]$Account,
     [string]$User,
     [string]$Role,
-    [string]$Host
+    [string]$SnowflakeHost
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Fix Python encoding mismatch on Windows (cp1252 locale vs utf-8 filesystem)
+$env:PYTHONUTF8 = '1'
 
 # ------------------------------------------------------------------
 # Load .env if it exists
@@ -77,7 +60,9 @@ if (Test-Path $envFile) {
         }
     }
 } else {
-    Write-Host "[INFO] No .env file found. You will be prompted for all values." -ForegroundColor DarkGray
+    Write-Host "[WARN] No .env file found at $envFile" -ForegroundColor Yellow
+    Write-Host "       Copy .env.example to .env and fill in your values." -ForegroundColor DarkGray
+    exit 1
 }
 
 # ------------------------------------------------------------------
@@ -110,22 +95,8 @@ function Read-Masked {
     }
 }
 
-function Read-Required {
-    param([string]$Prompt, [string]$Default = '')
-
-    while ($true) {
-        Write-Host "$Prompt" -NoNewline -ForegroundColor Yellow
-        if ($Default) { Write-Host " [$Default]" -NoNewline }
-        Write-Host ": " -NoNewline
-        $value = Read-Host
-        if ($value) { return $value }
-        if ($Default) { return $Default }
-        Write-Host "  A value is required." -ForegroundColor Red
-    }
-}
-
 # ------------------------------------------------------------------
-# Resolve parameters
+# Resolve all parameters from .env
 # ------------------------------------------------------------------
 
 Write-Host ''
@@ -133,26 +104,58 @@ Write-Host '============================================================' -Foreg
 Write-Host ' Snowflake CLI connection setup' -ForegroundColor Cyan
 Write-Host '============================================================' -ForegroundColor Cyan
 Write-Host ''
-Write-Host 'The PAT is read from .env or entered securely.' -ForegroundColor DarkGray
-Write-Host 'It is never displayed or logged.' -ForegroundColor DarkGray
-Write-Host ''
 
 $ConnectionName = Get-ConfigValue 'SNOWFLAKE_CONNECTION' $ConnectionName 'training'
 $Organization   = Get-ConfigValue 'SNOWFLAKE_ORGANIZATION' $Organization
 $Account        = Get-ConfigValue 'SNOWFLAKE_ACCOUNT' $Account
 $User           = Get-ConfigValue 'SNOWFLAKE_USER' $User
 $Role           = Get-ConfigValue 'SNOWFLAKE_ROLE' $Role 'SYSADMIN'
-$Host           = Get-ConfigValue 'SNOWFLAKE_HOST' $Host
+$SnowflakeHost  = Get-ConfigValue 'SNOWFLAKE_HOST' $SnowflakeHost
+$PatFileRel     = Get-ConfigValue 'SNOWFLAKE_PAT_FILE' '' 'secrets/snowflake_pat.txt'
 
-if (-not $Organization) { $Organization = Read-Required 'Snowflake organization name' }
-if (-not $Account)      { $Account      = Read-Required 'Snowflake account name' }
-if (-not $User)         { $User         = Read-Required 'Snowflake user name' }
+# Show resolved values (without secrets)
+Write-Host "  Connection : $ConnectionName" -ForegroundColor DarkGray
+Write-Host "  Account    : $Organization-$Account" -ForegroundColor DarkGray
+Write-Host "  User       : $User" -ForegroundColor DarkGray
+Write-Host "  Role       : $Role" -ForegroundColor DarkGray
+if ($SnowflakeHost) {
+    Write-Host "  Host       : $SnowflakeHost" -ForegroundColor DarkGray
+}
+Write-Host "  Token file : $PatFileRel" -ForegroundColor DarkGray
+Write-Host ''
 
-# PAT: try .env first, then prompt
+# Validate required values
+$missing = @()
+if (-not $Organization) { $missing += 'SNOWFLAKE_ORGANIZATION' }
+if (-not $Account)      { $missing += 'SNOWFLAKE_ACCOUNT' }
+if (-not $User)         { $missing += 'SNOWFLAKE_USER' }
+
+if ($missing.Count -gt 0) {
+    Write-Host "[ERROR] Missing required values in .env:" -ForegroundColor Red
+    foreach ($m in $missing) {
+        Write-Host "       - $m" -ForegroundColor Red
+    }
+    Write-Host "       Edit .env and fill in these values." -ForegroundColor DarkGray
+    exit 1
+}
+
+# ------------------------------------------------------------------
+# Resolve PAT: .env variable > file > prompt
+# ------------------------------------------------------------------
+
 $token = $envValues['SNOWFLAKE_PAT']
+$patFilePath = Join-Path $projectRoot $PatFileRel
 
 if (-not $token) {
-    $token = Read-Masked 'Snowflake PAT (token):'
+    if (Test-Path $patFilePath) {
+        Write-Host "[INFO] Reading PAT from $PatFileRel" -ForegroundColor DarkGray
+        $token = (Get-Content $patFilePath -Raw).Trim()
+    }
+}
+
+if (-not $token) {
+    Write-Host "[INFO] SNOWFLAKE_PAT not found in .env or PAT file." -ForegroundColor Yellow
+    $token = Read-Masked 'Enter Snowflake PAT (token):'
 }
 
 if (-not $token) {
@@ -161,69 +164,122 @@ if (-not $token) {
 }
 
 # ------------------------------------------------------------------
+# Write the token to the PAT file so the connection can find it
+# ------------------------------------------------------------------
+
+$patDir = Split-Path -Parent $patFilePath
+if (-not (Test-Path $patDir)) {
+    New-Item -ItemType Directory -Path $patDir -Force | Out-Null
+}
+
+# Only write if the file doesn't already have the same content
+$needWrite = $true
+if (Test-Path $patFilePath) {
+    $existing = (Get-Content $patFilePath -Raw).Trim()
+    if ($existing -eq $token) { $needWrite = $false }
+}
+
+if ($needWrite) {
+    Write-Host "[INFO] Writing PAT to $PatFileRel" -ForegroundColor DarkGray
+    [System.IO.File]::WriteAllText($patFilePath, $token)
+}
+
+# ------------------------------------------------------------------
 # Build the snow connection add command
+# The --token-file-path stores the path in config.toml so that
+# 'snow sql -c training' reads the token from the file automatically.
 # ------------------------------------------------------------------
 
 $snowArgs = @(
     'connection', 'add',
     '-n', $ConnectionName,
-    '-a', $Account,
-    '-o', $Organization,
+    '-a', "$Organization-$Account",
     '-u', $User,
     '-r', $Role,
+    '-A', 'PROGRAMMATIC_ACCESS_TOKEN',
+    '-t', $patFilePath,
     '--no-interactive'
 )
 
-if ($Host) {
-    $snowArgs += @('-h', $Host)
+if ($SnowflakeHost) {
+    $snowArgs += @('-h', $SnowflakeHost)
 }
 
-# Export the token only for the snow subprocess.
-$env:SNOWFLAKE_PAT = $token
+# ------------------------------------------------------------------
+# Drop existing connection if it already exists (idempotent)
+# ------------------------------------------------------------------
 
-Write-Host ''
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+
+$dropOutput = & snow connection remove $ConnectionName 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "[INFO] Removed existing connection '$ConnectionName'." -ForegroundColor DarkGray
+}
+
+$ErrorActionPreference = $prevEAP
+
+# ------------------------------------------------------------------
+# Create the connection
+# ------------------------------------------------------------------
+
 Write-Host 'Creating the connection...' -ForegroundColor Cyan
 
-try {
-    & snow @snowArgs 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+# Temporarily relax error preference so stderr warnings don't kill the script.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] snow connection add failed with exit code $LASTEXITCODE" -ForegroundColor Red
+try {
+    $snowOutput = & snow @snowArgs 2>&1
+    $snowExit = $LASTEXITCODE
+
+    foreach ($line in $snowOutput) {
+        $text = "$line"
+        if ($text -match 'Warning|UserWarning|encoding') {
+            Write-Host "       [warn] $text" -ForegroundColor Yellow
+        } elseif ($text -match 'Error|No such option|Usage') {
+            Write-Host "       [error] $text" -ForegroundColor Red
+        } else {
+            Write-Host "       $text" -ForegroundColor DarkGray
+        }
+    }
+
+    if ($snowExit -ne 0) {
+        Write-Host "[ERROR] snow connection add failed with exit code $snowExit" -ForegroundColor Red
+        $ErrorActionPreference = $prevEAP
         exit 1
     }
 
     Write-Host "[OK] Connection '$ConnectionName' created." -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to create connection: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
 } finally {
-    Remove-Item Env:SNOWFLAKE_PAT -ErrorAction SilentlyContinue
+    $ErrorActionPreference = $prevEAP
 }
 
 # ------------------------------------------------------------------
-# Test the connection
+# Test the connection — no env var needed, token comes from file
 # ------------------------------------------------------------------
 
 Write-Host ''
 Write-Host 'Testing the connection...' -ForegroundColor Cyan
 
-$env:SNOWFLAKE_PAT = $token
+$ErrorActionPreference = 'Continue'
 
 try {
     $testResult = & snow sql -q 'SELECT CURRENT_USER(), CURRENT_ROLE(), CURRENT_ACCOUNT()' `
         -c $ConnectionName --format=json 2>&1
+    $testExit = $LASTEXITCODE
 
-    if ($LASTEXITCODE -eq 0) {
+    $cleanResult = ($testResult | Where-Object { "$_" -notmatch 'Warning|UserWarning|encoding' })
+
+    if ($testExit -eq 0 -and $cleanResult) {
         Write-Host '[OK] Connection test succeeded.' -ForegroundColor Green
-        Write-Host "       Output: $testResult" -ForegroundColor DarkGray
+        Write-Host "       $cleanResult" -ForegroundColor DarkGray
     } else {
         Write-Host '[WARN] Connection created but test query failed.' -ForegroundColor Yellow
         Write-Host "       Check with: snow connection test -c $ConnectionName" -ForegroundColor DarkGray
     }
-} catch {
-    Write-Host '[WARN] Connection test could not execute.' -ForegroundColor Yellow
 } finally {
-    Remove-Item Env:SNOWFLAKE_PAT -ErrorAction SilentlyContinue
+    $ErrorActionPreference = $prevEAP
 }
 
 Write-Host ''
@@ -231,5 +287,6 @@ Write-Host 'Done.' -ForegroundColor Green
 Write-Host ''
 Write-Host 'Next steps:' -ForegroundColor Cyan
 Write-Host "  - Use the connection:  snow sql -q 'SELECT 1' -c $ConnectionName"
-Write-Host '  - Do not store the PAT in any committed file.'
+Write-Host '  - The token is read from the file automatically — no env var needed.'
+Write-Host '  - Do not store the PAT in any committed file (secrets/ is gitignored).'
 Write-Host '  - Rotate the PAT when the training module is complete.'
