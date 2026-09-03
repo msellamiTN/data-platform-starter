@@ -36,7 +36,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$env:PYTHONUTF8 = '1'
+# DO NOT set PYTHONUTF8=1: it makes Python decode subprocess output (e.g. icacls)
+# as UTF-8, which crashes on French Windows where icacls emits cp1252 bytes.
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir

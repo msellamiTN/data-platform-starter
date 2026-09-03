@@ -292,7 +292,7 @@ else
     if [[ $? -eq 0 ]] && [[ -n "$sa_check" ]]; then
       sa_sku=$(az storage account show --name "$arm_sa" --resource-group "$arm_rg" --query 'sku.name' -o tsv 2>/dev/null)
       test_step 'Azure Storage Account' 'PASS' "$arm_sa (SKU: $sa_sku)"
-      container_exists=$(az storage container exists --name "$arm_container" --account-name "$arm_sa" --query 'exists' -o tsv 2>/dev/null)
+      container_exists=$(az storage container exists --name "$arm_container" --account-name "$arm_sa" --auth-mode login --query 'exists' -o tsv 2>/dev/null)
       if [[ $? -eq 0 ]] && [[ "$container_exists" == 'true' ]]; then
         test_step 'Azure Blob Container' 'PASS' "$arm_container"
       else
@@ -303,10 +303,10 @@ else
       probe_name="connectivity-probe-$(date +%Y%m%d%H%M%S).txt"
       probe_temp="/tmp/$probe_name"
       echo 'connectivity-test' > "$probe_temp"
-      az storage blob upload --account-name "$arm_sa" --container-name "$arm_container" --name "$probe_name" --file "$probe_temp" --overwrite true >/dev/null 2>&1
+      az storage blob upload --account-name "$arm_sa" --container-name "$arm_container" --name "$probe_name" --file "$probe_temp" --overwrite true --auth-mode login >/dev/null 2>&1
       if [[ $? -eq 0 ]]; then
         test_step 'Blob write access' 'PASS' 'Probe uploaded and deleted'
-        az storage blob delete --account-name "$arm_sa" --container-name "$arm_container" --name "$probe_name" >/dev/null 2>&1
+        az storage blob delete --account-name "$arm_sa" --container-name "$arm_container" --name "$probe_name" --auth-mode login >/dev/null 2>&1
         rm -f "$probe_temp"
       else
         test_step 'Blob write access' 'FAIL' 'Cannot write to container - check RBAC'

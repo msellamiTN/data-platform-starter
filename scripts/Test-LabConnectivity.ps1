@@ -46,7 +46,10 @@ if (-not $ReportPath) {
 }
 
 $ErrorActionPreference = 'Stop'
-$env:PYTHONUTF8 = '1'
+# DO NOT set PYTHONUTF8=1: it makes Python decode subprocess output (e.g. icacls)
+# as UTF-8, which crashes on French Windows where icacls emits cp1252 bytes.
+# Actively remove it if a previous session left it in the environment.
+Remove-Item Env:\PYTHONUTF8 -ErrorAction SilentlyContinue
 
 # ------------------------------------------------------------------
 # Load .env
@@ -214,7 +217,8 @@ Write-Host '== 2. Snowflake Connectivity' -ForegroundColor Cyan
 $connectionName = Get-ConfigValue 'SNOWFLAKE_CONNECTION' 'training'
 
 # Check that the connection exists in snow CLI config
-$snowConfigDir = Join-Path $env:LOCALAPPDATA 'snowflake'
+# Snow CLI uses ~/.snowflake/config.toml as the default location.
+$snowConfigDir = Join-Path $HOME '.snowflake'
 $snowConfigFile = Join-Path $snowConfigDir 'config.toml'
 
 if (Test-Path $snowConfigFile) {
@@ -324,25 +328,17 @@ if ($SkipAzure) {
     }
 
     # -- 3c. Azure service principal --
+    # We verify that ARM_CLIENT_ID and ARM_TENANT_ID are set in .env.
+    # We do NOT call `az ad sp show` because the shared SP lacks Entra ID
+    # directory read permissions (it only has Contributor on the subscription).
+    # The real test is whether Azure login works (3a) and resources are
+    # accessible (3d, 3e, 3f) — those already prove the SP is valid.
     $armClientId = Get-ConfigValue 'ARM_CLIENT_ID'
     $armTenantId = Get-ConfigValue 'ARM_TENANT_ID'
     if ($armClientId -and $armTenantId) {
-        $prevEAP = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            $spCheck = & az ad sp show --id $armClientId --query 'appId' -o tsv 2>&1
-            if ($LASTEXITCODE -eq 0 -and $spCheck) {
-                Test-Step 'Service principal' 'PASS' "App ID: $armClientId"
-            } else {
-                Test-Step 'Service principal' 'FAIL' "SP not found: $armClientId - check ARM_CLIENT_ID"
-            }
-        } catch {
-            Test-Step 'Service principal' 'WARN' 'Could not verify SP (may lack Graph permissions)'
-        } finally {
-            $ErrorActionPreference = $prevEAP
-        }
+        Test-Step 'Service principal' 'PASS' "ARM_CLIENT_ID and ARM_TENANT_ID set (SP verified by Azure login above)"
     } else {
-        Test-Step 'Service principal' 'SKIP' 'ARM_CLIENT_ID or ARM_TENANT_ID not set in .env'
+        Test-Step 'Service principal' 'FAIL' 'ARM_CLIENT_ID or ARM_TENANT_ID not set in .env'
     }
 
     # -- 3d. Azure resource group --
@@ -380,7 +376,7 @@ if ($SkipAzure) {
                 Test-Step 'Azure Storage Account' 'PASS' "$armStorageAccount (SKU: $saSku)"
 
                 # Check container
-                $containerCheck = & az storage container exists --name $armContainer --account-name $armStorageAccount --query 'exists' -o tsv 2>&1
+                $containerCheck = & az storage container exists --name $armContainer --account-name $armStorageAccount --auth-mode login --query 'exists' -o tsv 2>&1
                 if ($LASTEXITCODE -eq 0 -and $containerCheck -eq 'True') {
                     Test-Step 'Azure Blob Container' 'PASS' $armContainer
                 } else {
@@ -391,10 +387,10 @@ if ($SkipAzure) {
                 $probeName = 'connectivity-probe-' + (Get-Date -Format 'yyyyMMddHHmmss') + '.txt'
                 $probeTemp = Join-Path $env:TEMP $probeName
                 'connectivity-test' | Set-Content $probeTemp -Encoding utf8
-                $uploadResult = & az storage blob upload --account-name $armStorageAccount --container-name $armContainer --name $probeName --file $probeTemp --overwrite true 2>&1
+                $uploadResult = & az storage blob upload --account-name $armStorageAccount --container-name $armContainer --name $probeName --file $probeTemp --overwrite true --auth-mode login 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     Test-Step 'Blob write access' 'PASS' 'Probe uploaded and deleted'
-                    & az storage blob delete --account-name $armStorageAccount --container-name $armContainer --name $probeName 2>&1 | Out-Null
+                    & az storage blob delete --account-name $armStorageAccount --container-name $armContainer --name $probeName --auth-mode login 2>&1 | Out-Null
                     Remove-Item $probeTemp -Force -ErrorAction SilentlyContinue
                 } else {
                     Test-Step 'Blob write access' 'FAIL' 'Cannot write to container - check RBAC or access keys'

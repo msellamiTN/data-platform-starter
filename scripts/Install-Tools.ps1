@@ -144,8 +144,16 @@ function Get-ToolVersion {
 
     if (-not (Test-Tool $Name)) { return $null }
 
+    # Always refresh PATH so a recently installed local copy is found first.
+    Sync-Path
+
     try {
-        $output = @(& $Name @Arguments 2>&1)
+        $exe = Get-FirstInPath $Name
+        if ($exe) {
+            $output = @(& $exe @Arguments 2>&1)
+        } else {
+            $output = @(& $Name @Arguments 2>&1)
+        }
         if ($LASTEXITCODE -ne 0) { return $null }
 
         $line = $output | Where-Object { "$_".Trim() } | Select-Object -First 1
@@ -163,7 +171,9 @@ function Get-ToolVersion {
 function Sync-Path {
     $machine = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
     $user    = [Environment]::GetEnvironmentVariable('PATH', 'User')
-    $env:PATH = @($machine, $user, $BinDir) -ne '' -join ';'
+    # Local BinDir must come FIRST so the exact policy versions win over
+    # any system-wide installation (e.g. Terraform 1.15.1 installed elsewhere).
+    $env:PATH = (($BinDir, $machine, $user) | Where-Object { $_ }) -join ';'
 }
 
 function Add-UserPath {
@@ -184,6 +194,51 @@ function Add-UserPath {
     if ($env:PATH -notmatch "(^|;)$escaped(;|$)") {
         $env:PATH = "$Directory;$env:PATH"
     }
+}
+
+function Add-SystemPath {
+    param([string]$Directory)
+
+    if (-not (Test-Path $Directory)) { return $false }
+
+    try {
+        $current = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+        if (-not $current) { $current = '' }
+        $escaped = [Regex]::Escape($Directory)
+
+        if ($current -notmatch "(^|;)$escaped(;|$)") {
+            $updated = if ($current) { "$Directory;$current" } else { $Directory }
+            [Environment]::SetEnvironmentVariable('PATH', $updated, 'Machine')
+            Write-Host "       System PATH updated: $Directory" -ForegroundColor DarkGray
+        }
+        return $true
+    } catch {
+        Write-Host "       Could not update System PATH (admin rights required): $Directory" -ForegroundColor DarkGray
+        return $false
+    }
+}
+
+function Add-ToolPaths {
+    param([string[]]$Directories, [switch]$IncludeSystem)
+
+    foreach ($dir in $Directories) {
+        Add-UserPath $dir
+        if ($IncludeSystem) { Add-SystemPath $dir }
+    }
+}
+
+function Get-FirstInPath {
+    param([string]$Name)
+    $candidates = @(Get-Command $Name -All -ErrorAction SilentlyContinue)
+    if (-not $candidates) { return $null }
+    $paths = $env:PATH -split ';' | Where-Object { $_ } | Select-Object -Unique
+    foreach ($p in $paths) {
+        foreach ($c in $candidates) {
+            $dir = Split-Path -Parent $c.Source
+            if ($dir -and $dir -eq $p) { return $c.Source }
+        }
+    }
+    return $candidates[0].Source
 }
 
 function Install-FromZip {
@@ -207,11 +262,16 @@ function Install-FromZip {
 
         if (-not $executable) { throw "$ExecutableName not found in the archive." }
 
-        Copy-Item -Path $executable.FullName -Destination (Join-Path $BinDir $ExecutableName) -Force
+        $dest = Join-Path $BinDir $ExecutableName
+        Copy-Item -Path $executable.FullName -Destination $dest -Force
         Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 
-        Add-UserPath $BinDir
+        Add-ToolPaths @($BinDir) -IncludeSystem
         Sync-Path
+        # Remove any older terraform on PATH so our local copy wins immediately.
+        if ($ExecutableName -eq 'terraform.exe' -and (Test-Path $dest)) {
+            $env:PATH = "$BinDir;$env:PATH"
+        }
         return $true
     } catch {
         Write-Host ("       Download or extraction failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
@@ -235,6 +295,38 @@ function Install-WithWinget {
         return $true
     } catch {
         return $false
+    }
+}
+
+function Install-AzureCLI {
+    # Try winget first, then fall back to the official MSI.
+    if (Install-WithWinget 'Microsoft.AzureCLI') { return $true }
+
+    try {
+        $msi = Join-Path $env:TEMP 'AzureCLISetup.msi'
+        $url = 'https://aka.ms/installazurecliwindows'
+        Write-Host '       Downloading Azure CLI installer...' -ForegroundColor DarkGray
+        Invoke-WebRequest -Uri $url -OutFile $msi -UseBasicParsing
+
+        Write-Host '       Installing Azure CLI (this may take a minute)...' -ForegroundColor DarkGray
+        $process = Start-Process -FilePath 'msiexec.exe' `
+            -ArgumentList "/i `"$msi`" /quiet /norestart" `
+            -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            Write-Host ("       MSI installer exited with code {0}" -f $process.ExitCode) -ForegroundColor DarkGray
+            return $false
+        }
+        Remove-Item $msi -Force -ErrorAction SilentlyContinue
+        # Default Azure CLI install location.
+        $azDir = Join-Path $env:ProgramFiles '(x86)\Microsoft SDKs\Azure\CLI2\wbin'
+        if (Test-Path $azDir) { Add-ToolPaths @($azDir) -IncludeSystem }
+        Sync-Path
+        return $true
+    } catch {
+        Write-Host ("       Azure CLI installation failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
+        return $false
+    } finally {
+        if (Test-Path $msi) { Remove-Item $msi -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -312,9 +404,18 @@ if ($terraformMatches -and -not $Force) {
     $detail = if ($terraformVersion) { "Found $terraformVersion, policy requires $($Policy.Terraform)" } else { 'Not found' }
     Add-Result 'Terraform' 'Core' 'FAIL' $detail (Get-ManualStep 'Terraform')
 } else {
+    # Ensure our BinDir is at the front of PATH before rechecking.
+    Add-ToolPaths @($BinDir) -IncludeSystem
+    Sync-Path
+    $env:PATH = "$BinDir;$env:PATH"
+
     $url = "https://releases.hashicorp.com/terraform/$($Policy.Terraform)/terraform_$($Policy.Terraform)_windows_amd64.zip"
     if (Install-FromZip 'terraform' $url 'terraform.exe') {
-        $terraformVersion = Get-ToolVersion 'terraform' @('version')
+        # Recheck from the first terraform.exe on PATH (should be our local copy).
+        $localTerraform = Get-FirstInPath 'terraform'
+        if ($localTerraform) {
+            $terraformVersion = & $localTerraform version 2>&1 | Select-Object -First 1
+        }
     }
     if ($terraformVersion -and $terraformVersion -match [Regex]::Escape($Policy.Terraform)) {
         Add-Result 'Terraform' 'Core' 'PASS' $terraformVersion
@@ -373,7 +474,7 @@ function Initialize-TrainingVenv {
     }
 
     # Always ensure the venv Scripts dir is in PATH
-    Add-UserPath (Get-VenvScriptPath)
+    Add-ToolPaths @(Get-VenvScriptPath) -IncludeSystem
     Sync-Path
 
     return (Test-Path $venvPython)
@@ -406,52 +507,55 @@ function Install-VenvPackage {
 }
 
 # ------------------------------------------------------------------
-# Snowflake CLI
+# Python based tools (single venv to keep dependency graph consistent)
 # ------------------------------------------------------------------
 
-Write-Section 'Snowflake CLI'
+Write-Section 'Python based tools'
 
 $snowVersion = Get-ToolVersion 'snow' @('--version')
+$dbtVersion  = Get-ToolVersion 'dbt' @('--version')
 
-if ($snowVersion -and -not $Force) {
+if ($snowVersion -and $dbtVersion -and -not $Force) {
     Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
+    Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
 } elseif ($Check) {
-    Add-Result 'Snowflake CLI' 'Core' 'FAIL' 'Not found' (Get-ManualStep 'Snowflake CLI')
+    if ($snowVersion) {
+        Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
+    } else {
+        Add-Result 'Snowflake CLI' 'Core' 'FAIL' 'Not found' (Get-ManualStep 'Snowflake CLI')
+    }
+    if ($dbtVersion) {
+        Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
+    } else {
+        Add-Result 'dbt' 'Course' 'FAIL' 'Not found (required from Day 5)' (Get-ManualStep 'dbt')
+    }
 } else {
-    $installed = $false
     if (Initialize-TrainingVenv) {
-        $installed = Install-VenvPackage @('snowflake-cli')
+        # Install snowflake-cli and dbt together so pip resolves a compatible set.
+        # If no compatible set exists, the command fails cleanly instead of
+        # creating a broken venv with conflicting transitive deps.
+        $dbtSpec = $Policy.DbtSpec
+        $installed = Install-VenvPackage @('snowflake-cli', "dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
+        if (-not $installed) {
+            # Fallback: install only Snowflake CLI so Day 0-4 labs work.
+            # dbt is only required from Day 5; the learner can install it later.
+            Write-Host '       dbt install failed; retrying with Snowflake CLI only...' -ForegroundColor Yellow
+            $installed = Install-VenvPackage @('snowflake-cli')
+        }
     }
     $snowVersion = Get-ToolVersion 'snow' @('--version')
+    $dbtVersion  = Get-ToolVersion 'dbt' @('--version')
     if ($snowVersion) {
         Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
     } else {
         Add-Result 'Snowflake CLI' 'Core' 'FAIL' 'Installation did not complete' (Get-ManualStep 'Snowflake CLI')
     }
-}
-
-# ------------------------------------------------------------------
-# dbt
-# ------------------------------------------------------------------
-
-Write-Section "dbt $($Policy.DbtSpec)"
-
-$dbtVersion = Get-ToolVersion 'dbt' @('--version')
-
-if ($dbtVersion -and -not $Force) {
-    Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
-} elseif ($Check) {
-    Add-Result 'dbt' 'Course' 'FAIL' 'Not found (required from Day 5)' (Get-ManualStep 'dbt')
-} else {
-    $installed = $false
-    if (Initialize-TrainingVenv) {
-        # Use pip constraint syntax that avoids shell escaping issues with '<'
-        $dbtSpec = $Policy.DbtSpec
-        $installed = Install-VenvPackage @("dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
-    }
-    $dbtVersion = Get-ToolVersion 'dbt' @('--version')
     if ($dbtVersion) {
         Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
+    } elseif ($installed -and -not (Get-ToolVersion 'dbt' @('--version'))) {
+        # dbt was skipped because it conflicted with Snowflake CLI.
+        # Mark as WARN since it is only needed from Day 5.
+        Add-Result 'dbt' 'Course' 'WARN' 'Skipped due to dependency conflict with Snowflake CLI (reinstall with pip install dbt-core<3.0.0 dbt-snowflake<3.0.0 before Day 5)' (Get-ManualStep 'dbt')
     } else {
         Add-Result 'dbt' 'Course' 'FAIL' 'Installation did not complete' (Get-ManualStep 'dbt')
     }
@@ -470,7 +574,7 @@ if ($azVersion -and -not $Force) {
 } elseif ($Check) {
     Add-Result 'Azure CLI' 'Course' 'FAIL' 'Not found (required from Day 2)' (Get-ManualStep 'Azure CLI')
 } else {
-    if (Install-WithWinget 'Microsoft.AzureCLI') { $azVersion = Get-ToolVersion 'az' @('version') }
+    if (Install-AzureCLI) { $azVersion = Get-ToolVersion 'az' @('version') }
     if ($azVersion) {
         Add-Result 'Azure CLI' 'Course' 'PASS' 'Available'
     } else {

@@ -15,6 +15,14 @@ backend.hcl
 !*.tfvars.example
 !backend.hcl.example
 
+# Targeted local state exports and recovery artifacts
+state-export*.json
+state-export*.txt
+state-exports/
+state-recovery/
+recovery/*.json
+recovery/*.tfstate*
+
 # Credentials and secrets
 .env
 .env.*

@@ -6,13 +6,13 @@
 # Usage:
 #   terraform init -backend-config=backend.hcl
 
-resource_group_name  = "rg-data-platform-tfstate"
-storage_account_name = "stdataplatformtfstate"
+resource_group_name  = "rg-data2ai-tf-state"
+storage_account_name = "sadata2aitfstatemsn"
 container_name       = "tfstate"
-key                  = "data-platform/uat/terraform.tfstate"
+key                  = "training/APP01/uat/terraform.tfstate"
+use_azuread_auth     = true
 
-# Production with Azure AD authentication (no SAS token):
-# use_azuread_auth     = true
+# Optional for workload identity federation (CI/CD):
 # use_oidc             = true
 # subscription_id      = "<your-subscription-id>"
 # tenant_id            = "<your-tenant-id>"

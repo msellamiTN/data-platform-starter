@@ -154,6 +154,13 @@ if [[ -z "$token" ]]; then
   exit 1
 fi
 
+# PATs are JWTs and should only contain base64url characters.
+if [[ ! "$token" =~ ^[A-Za-z0-9_\-\.]+$ ]]; then
+  printf '[ERROR] PAT contains characters that are not valid in a JWT (spaces, quotes, non-ASCII, etc.).\n' >&2
+  printf '       Re-paste the PAT from your clipboard or ask the instructor for a fresh PAT.\n' >&2
+  exit 1
+fi
+
 # ------------------------------------------------------------------
 # Write the token to the PAT file so the connection can find it
 # ------------------------------------------------------------------
@@ -169,40 +176,45 @@ if [[ ! -f "$pat_file_path" ]] || [[ "$(cat "$pat_file_path" | tr -d '[:space:]'
 fi
 
 # ------------------------------------------------------------------
-# Build the snow connection add command
-# The --token-file-path stores the path in config.toml so that
-# 'snow sql -c training' reads the token from the file automatically.
-# ------------------------------------------------------------------
-
-snow_args=(connection add -n "$connection_name" -a "${organization}-${account}" -u "$user" -r "$role" -A PROGRAMMATIC_ACCESS_TOKEN -t "$pat_file_path" --no-interactive)
-
-if [[ -n "$host" ]]; then
-  snow_args+=(-h "$host")
-fi
-
-# ------------------------------------------------------------------
-# Drop existing connection if it already exists (idempotent)
-# ------------------------------------------------------------------
-
-if snow connection remove "$connection_name" 2>/dev/null; then
-  printf '[INFO] Removed existing connection '%s'.\n' "$connection_name" >&2
-fi
-
-# ------------------------------------------------------------------
-# Create the connection
+# Write Snowflake CLI config.toml directly
+# Avoids `snow connection add` encoding bugs on some locales.
 # ------------------------------------------------------------------
 
 printf 'Creating the connection...\n'
 
-if snow "${snow_args[@]}" 2>&1; then
-  printf "[OK] Connection '%s' created.\n" "$connection_name"
-else
-  printf "[ERROR] snow connection add failed with exit code %d\n" "$?"
-  exit 1
+snowflake_config_dir="${HOME}/.snowflake"
+snowflake_config_file="${snowflake_config_dir}/config.toml"
+
+mkdir -p "$snowflake_config_dir"
+
+# Remove any existing corrupted config.
+if [[ -f "$snowflake_config_file" ]]; then
+  if ! iconv -f UTF-8 -t UTF-8 "$snowflake_config_file" >/dev/null 2>&1; then
+    printf '[WARN] Existing Snowflake config.toml is not valid UTF-8; removing it.\n' >&2
+    rm -f "$snowflake_config_file"
+  fi
 fi
 
+{
+  printf '[connections]\n'
+  printf '[connections.%s]\n' "$connection_name"
+  printf 'account = "%s"\n' "$account"
+  printf 'organization = "%s"\n' "$organization"
+  printf 'user = "%s"\n' "$user"
+  printf 'role = "%s"\n' "$role"
+  printf 'authenticator = "PROGRAMMATIC_ACCESS_TOKEN"\n'
+  printf 'token_file_path = "%s"\n' "$pat_file_path"
+  if [[ -n "$host" ]]; then
+    printf 'host = "%s"\n' "$host"
+  else
+    printf 'host = "%s-%s.snowflakecomputing.com"\n' "$organization" "$account"
+  fi
+} > "$snowflake_config_file"
+
+printf "[OK] Connection '%s' written to %s\n" "$connection_name" "$snowflake_config_file"
+
 # ------------------------------------------------------------------
-# Test the connection — no env var needed, token comes from file
+# Test the connection - token comes from file, no env var needed
 # ------------------------------------------------------------------
 
 printf '\nTesting the connection...\n'
@@ -217,6 +229,6 @@ fi
 printf '\nDone.\n'
 printf '\nNext steps:\n'
 printf "  - Use the connection:  snow sql -q 'SELECT 1' -c %s\n" "$connection_name"
-printf '  - The token is read from the file automatically — no env var needed.\n'
+printf '  - The token is read from the file automatically - no env var needed.\n'
 printf '  - Do not store the PAT in any committed file (secrets/ is gitignored).\n'
 printf '  - Rotate the PAT when the training module is complete.\n'
