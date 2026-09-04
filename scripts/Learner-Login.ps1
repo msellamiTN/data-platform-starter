@@ -42,7 +42,8 @@ $envValues = @{}
 # ------------------------------------------------------------------
 $localBin = Join-Path $HOME '.data2ai\bin'
 $localVenv = Join-Path $HOME '.data2ai\venv\Scripts'
-foreach ($dir in @($localBin, $localVenv)) {
+$localDbtVenv = Join-Path $HOME '.data2ai\venv-dbt\Scripts'
+foreach ($dir in @($localBin, $localVenv, $localDbtVenv)) {
     if (Test-Path $dir) {
         $escaped = [Regex]::Escape($dir)
         if ($env:PATH -notmatch "(^|;)$escaped(;|$)") {
@@ -192,69 +193,28 @@ $env:LEARNER_PREFIX = $LearnerPrefix
 
 # ------------------------------------------------------------------
 # Set TF_VAR_snowflake_token so Terraform can read the PAT without
-# prompting. The PAT is retrieved from Azure Key Vault at runtime.
-# Fallback: if Key Vault is unavailable, try secrets/snowflake_pat.txt.
+# prompting. The shared PAT is in secrets/snowflake_pat.txt (gitignored).
+# All learners share the same PAT (DATA2AI user with SYSADMIN role).
+# Resource isolation is via LEARNER_PREFIX in resource names + state files.
 # Never display or log the token.
 # ------------------------------------------------------------------
 
 $patRetrieved = $false
+$patFile = Join-Path $projectRoot 'secrets\snowflake_pat.txt'
 
-# --- Strategy 1: Azure Key Vault (preferred) ---
-$kvName = [Environment]::GetEnvironmentVariable('KEY_VAULT_NAME')
-if (-not $kvName) {
-    # Try loading from config/shared.env
-    $sharedEnv = Join-Path $projectRoot 'config\shared.env'
-    if (Test-Path $sharedEnv) {
-        Get-Content $sharedEnv | ForEach-Object {
-            $line = $_.Trim()
-            if ($line -and $line -notmatch '^#' -and $line -match '^KEY_VAULT_NAME=') {
-                $kvName = ($line -split '=', 2)[1].Trim()
-            }
-        }
-    }
-}
-
-if ($kvName) {
-    $secretName = "SnowflakePAT-$LearnerPrefix"
-    Write-Host "[INFO] Retrieving PAT from Key Vault: $kvName / $secretName" -ForegroundColor DarkGray
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'SilentlyContinue'
-    $patValue = & az keyvault secret show --vault-name $kvName --name $secretName --query value -o tsv 2>$null
-    $kvExit = $LASTEXITCODE
-    $ErrorActionPreference = $prevEAP
-
-    if ($kvExit -eq 0 -and $patValue) {
+if (Test-Path $patFile) {
+    $patValue = (Get-Content $patFile -Encoding UTF8 -Raw).Trim()
+    if ($patValue) {
         $env:TF_VAR_snowflake_token = $patValue
         $patRetrieved = $true
-        Write-Host '       TF_VAR_snowflake_token (from Key Vault)' -ForegroundColor DarkGray
-    } else {
-        Write-Host "[WARN] Key Vault secret '$secretName' not found or inaccessible." -ForegroundColor Yellow
-        Write-Host "       Instructor: run az keyvault secret set --vault-name $kvName --name $secretName --value <PAT>" -ForegroundColor DarkGray
-    }
-} else {
-    Write-Host '[WARN] KEY_VAULT_NAME not set. Cannot retrieve PAT from Key Vault.' -ForegroundColor Yellow
-    Write-Host '       Add KEY_VAULT_NAME to config/shared.env or .env' -ForegroundColor DarkGray
-}
-
-# --- Strategy 2: Fallback to local file (backward compatibility) ---
-if (-not $patRetrieved) {
-    $patFile = Join-Path $projectRoot 'secrets\snowflake_pat.txt'
-    if (Test-Path $patFile) {
-        $patValue = (Get-Content $patFile -Encoding UTF8 -Raw).Trim()
-        if ($patValue) {
-            $env:TF_VAR_snowflake_token = $patValue
-            $patRetrieved = $true
-            Write-Host '       TF_VAR_snowflake_token (from local PAT file fallback)' -ForegroundColor DarkGray
-        }
+        Write-Host '       TF_VAR_snowflake_token (from shared PAT file)' -ForegroundColor DarkGray
     }
 }
 
 if (-not $patRetrieved) {
     Write-Host '[WARN] PAT not found. Terraform will prompt for var.snowflake_token.' -ForegroundColor Yellow
-    Write-Host '       Fix: ask instructor to set SnowflakePAT-' -NoNewline -ForegroundColor DarkGray
-    Write-Host "$LearnerPrefix" -NoNewline -ForegroundColor Cyan
-    Write-Host ' in Key Vault' -ForegroundColor DarkGray
-    Write-Host '       Or:  run .\scripts\New-SnowflakeConnection.ps1 to create a local PAT file' -ForegroundColor DarkGray
+    Write-Host '       Fix: run .\scripts\New-SnowflakeConnection.ps1 to create the PAT file' -ForegroundColor DarkGray
+    Write-Host '       Or:  ask instructor to provide secrets/snowflake_pat.txt' -ForegroundColor DarkGray
 }
 
 Write-Host '[PASS] Environment variables set:' -ForegroundColor Green

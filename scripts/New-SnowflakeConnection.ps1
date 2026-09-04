@@ -196,6 +196,16 @@ if ($needWrite) {
     [System.IO.File]::WriteAllText($patFilePath, $token, [System.Text.UTF8Encoding]::new($false))
 }
 
+# Restrict PAT file permissions to current user only.
+# Snowflake CLI v3.25+ (connector 4.4+) enforces strict file permissions.
+try {
+    $currentUser = (whoami).Trim()
+    & icacls $patFilePath /inheritance:r 2>&1 | Out-Null
+    & icacls $patFilePath /grant:r "${currentUser}:(F)" 2>&1 | Out-Null
+} catch {
+    Write-Host '[WARN] Could not restrict PAT file permissions.' -ForegroundColor Yellow
+}
+
 # Validate the PAT file is valid UTF-8 and contains only printable ASCII.
 try {
     $bytes = [System.IO.File]::ReadAllBytes($patFilePath)
@@ -234,21 +244,19 @@ if (Test-Path $snowflakeConfigFile) {
     }
 }
 
-# Snowflake CLI expects account as account_name and organization as a separate key.
-# host is derived from account, but we keep it explicit to avoid mismatches.
+# Snowflake CLI config.toml format:
+#   account = "<account_name>"  (e.g. PM71247)
+#   host = "<org>-<account>.snowflakecomputing.com"  (explicit to avoid mismatches)
 # All values are forced to printable ASCII to avoid any non-UTF-8 bytes.
 $accountValue = $Account
-$organizationValue = $Organization
 $hostValue = if ($SnowflakeHost) { $SnowflakeHost } else { "$Organization-$Account.snowflakecomputing.com" }
 
 # Use forward slashes in the token file path to avoid TOML backslash escaping issues.
 $patFilePathTOML = $patFilePath -replace '\\', '/'
 
 $configLines = @(
-    "[connections]",
     "[connections.$ConnectionName]",
     "account = `"$accountValue`"",
-    "organization = `"$organizationValue`"",
     "user = `"$User`"",
     "role = `"$Role`"",
     "authenticator = `"PROGRAMMATIC_ACCESS_TOKEN`"",
