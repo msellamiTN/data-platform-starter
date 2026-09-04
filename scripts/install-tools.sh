@@ -205,11 +205,31 @@ python_command() {
   else return 1; fi
 }
 
+policy_python_command() {
+  # Try to find a Python matching POLICY_PYTHON (e.g. python3.12).
+  local py_ver="${POLICY_PYTHON//./}"
+  local candidate="python${POLICY_PYTHON}"
+  if has_tool "$candidate"; then printf '%s' "$candidate"; return 0; fi
+  candidate="python${py_ver}"
+  if has_tool "$candidate"; then printf '%s' "$candidate"; return 0; fi
+  # Fall back to whatever python_command finds.
+  python_command
+}
+
 init_venv() {
   local py
-  py="$(python_command)" || return 1
+  # If an existing venv has the wrong Python version, remove it.
+  if [[ -x "${venv_bin}/python" ]]; then
+    local venv_ver
+    venv_ver="$("${venv_bin}/python" --version 2>&1 || true)"
+    if [[ -n "$venv_ver" && "$venv_ver" != *"$POLICY_PYTHON"* ]]; then
+      printf '       Existing venv uses %s; recreating with Python %s...\n' "$venv_ver" "$POLICY_PYTHON" >&2
+      rm -rf "$venv_dir"
+    fi
+  fi
   if [[ ! -x "${venv_bin}/python" ]]; then
-    printf '       Creating the isolated virtual environment...\n' >&2
+    py="$(policy_python_command)" || return 1
+    printf '       Creating the isolated virtual environment with %s...\n' "$py" >&2
     "$py" -m venv "$venv_dir" 2>&1 | sed 's/^/       /' >&2
   fi
   # Always ensure the venv bin dir is in PATH
@@ -222,7 +242,7 @@ install_venv_package() {
   printf '       Upgrading pip...\n' >&2
   "${venv_bin}/python" -m pip install --upgrade pip 2>&1 | sed 's/^/       /' >&2
   printf '       Installing: %s\n' "$*" >&2
-  "${venv_bin}/python" -m pip install "$@" 2>&1 | sed 's/^/       /' >&2
+  "${venv_bin}/python" -m pip install --prefer-binary "$@" 2>&1 | sed 's/^/       /' >&2
   return $?
 }
 

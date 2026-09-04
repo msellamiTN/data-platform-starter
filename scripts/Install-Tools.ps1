@@ -459,14 +459,75 @@ function Get-VenvScriptPath {
     return (Join-Path $VenvDir 'Scripts')
 }
 
-function Initialize-TrainingVenv {
-    if (-not (Test-Tool 'python')) { return $false }
+function Get-PolicyPython {
+    # Try the Windows Python launcher with the exact policy version (e.g. 'py -3.12').
+    if (Test-Tool 'py') {
+        $pyOutput = @(& py -"$($Policy.Python)" --version 2>&1)
+        if ($LASTEXITCODE -eq 0 -and "$pyOutput" -match $Policy.Python) {
+            return @('py', "-$($Policy.Python)")
+        }
+    }
 
+    # Search for python3.12.exe in common install locations.
+    $exeName = "python$($Policy.Python -replace '\.','').exe"
+    $searchDirs = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+        'C:\Python312',
+        'C:\Program Files\Python312',
+        (Join-Path $HOME '.data2ai\python312')
+    )
+    foreach ($dir in $searchDirs) {
+        if (-not (Test-Path $dir)) { continue }
+        $candidate = Join-Path $dir $exeName
+        if (Test-Path $candidate) { return @($candidate) }
+        # Also check versioned subdirectories (e.g. Python312\python.exe)
+        $subDirs = Get-ChildItem -Path $dir -Directory -ErrorAction SilentlyContinue
+        foreach ($sub in $subDirs) {
+            $candidate = Join-Path $sub.FullName 'python.exe'
+            if (Test-Path $candidate) {
+                $verOutput = @(& $candidate --version 2>&1)
+                if ($LASTEXITCODE -eq 0 -and "$verOutput" -match $Policy.Python) {
+                    return @($candidate)
+                }
+            }
+        }
+    }
+
+    # Fall back to whatever 'python' resolves to.
+    if (Test-Tool 'python') { return @('python') }
+    return $null
+}
+
+function Get-VenvPythonVersion {
+    $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
+    if (-not (Test-Path $venvPython)) { return $null }
+    try {
+        $ver = @(& $venvPython --version 2>&1)
+        if ($LASTEXITCODE -eq 0) { return [string]$ver }
+    } catch {}
+    return $null
+}
+
+function Initialize-TrainingVenv {
     $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
 
+    # Check if an existing venv was created with the wrong Python version.
+    if (Test-Path $venvPython) {
+        $venvVer = Get-VenvPythonVersion
+        if ($venvVer -and $venvVer -notmatch [Regex]::Escape($Policy.Python)) {
+            Write-Host "       Existing venv uses $venvVer; recreating with Python $($Policy.Python)..." -ForegroundColor Yellow
+            Remove-Item -Path $VenvDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     if (-not (Test-Path $venvPython)) {
-        Write-Host '       Creating the isolated virtual environment...' -ForegroundColor DarkGray
-        $venvOutput = & python -m venv $VenvDir 2>&1
+        $pyCmd = Get-PolicyPython
+        if (-not $pyCmd) {
+            Write-Host '       No Python interpreter found.' -ForegroundColor Red
+            return $false
+        }
+        Write-Host "       Creating the isolated virtual environment with $($pyCmd -join ' ')..." -ForegroundColor DarkGray
+        $venvOutput = & $pyCmd[0] @($pyCmd[1..($pyCmd.Length - 1)]) -m venv $VenvDir 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "       venv creation failed: $venvOutput" -ForegroundColor Red
             return $false
@@ -492,7 +553,7 @@ function Install-VenvPackage {
             ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
 
         Write-Host "       Installing: $($Specs -join ' ')" -ForegroundColor DarkGray
-        & $venvPython -m pip install @Specs 2>&1 |
+        & $venvPython -m pip install --prefer-binary @Specs 2>&1 |
             ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
 
         if ($LASTEXITCODE -ne 0) {
