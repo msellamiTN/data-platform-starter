@@ -50,8 +50,13 @@ flowchart LR
 └── scripts/
     ├── Install-Tools.ps1           # Installation Windows
     ├── install-tools.sh            # Installation Linux/macOS
+    ├── Learner-Login.ps1           # Login Azure KV-first Windows
+    ├── learner-login.sh            # Login Azure Linux/macOS
     ├── New-SnowflakeConnection.ps1 # Connexion Snowflake Windows
     ├── new-snowflake-connection.sh # Connexion Snowflake Linux/macOS
+    ├── Test-LabConnectivity.ps1    # Validation connectivité Windows
+    ├── test-lab-connectivity.sh    # Validation connectivité Linux/macOS
+    ├── Test-VMReadiness.ps1        # Vérification VM Windows
     ├── validate.ps1                # Validation locale Windows
     └── validate.sh                 # Validation locale Linux/macOS
 ```
@@ -92,10 +97,13 @@ cp .env.example .env
 
 Ouvrez `.env` et ajoutez uniquement :
 
-- `LEARNER_PREFIX` : votre préfixe apprenant (fourni par le formateur);
-- `SNOWFLAKE_PAT` : votre PAT temporaire (fourni par le formateur).
+- `LEARNER_PREFIX` : votre préfixe apprenant (fourni par le formateur).
 
 Les autres valeurs sont déjà remplies par le formateur. `.env` est gitignored.
+
+> `[KV-FIRST]` En mode KV-first, vous n'avez **pas besoin** de fichiers
+> `secrets/` distribués manuellement. Les secrets (SP credentials, PAT)
+> sont récupérés depuis Azure Key Vault par `Learner-Login.ps1`.
 
 ### 4. Configurer la connexion Snowflake
 
@@ -113,13 +121,34 @@ powershell -ExecutionPolicy Bypass -File .\scripts\New-SnowflakeConnection.ps1
 
 Le script lit `.env` automatiquement et crée la connexion `training`.
 
-### 5. Valider
+### 5. Authentifier Azure (KV-first)
+
+**Windows :**
+
+```powershell
+.\scripts\Learner-Login.ps1 -LearnerPrefix APP01
+```
+
+Le script va :
+1. Vous authentifier avec votre compte AAD (navigateur)
+2. Récupérer les credentials SP + PAT depuis Key Vault
+3. Se reconnecter avec le SP pour Terraform
+4. Définir toutes les variables d'environnement
+
+**Fallback (recovery uniquement) :**
+
+```powershell
+.\scripts\Learner-Login.ps1 -LearnerPrefix APP01 -ForceFallback
+```
+
+### 6. Valider
 
 ```bash
 snow sql -q 'SELECT 1' -c training
+.\scripts\Test-LabConnectivity.ps1 -SkipDevOps
 ```
 
-### 6. Suivre les ateliers
+### 7. Suivre les ateliers
 
 Chaque atelier du parcours indique quels fichiers créer et où. Le dépôt cloné est la **racine de travail** pour tous les fichiers `.tf`, modules et configurations.
 
@@ -153,7 +182,10 @@ Les versions de Terraform et des providers sont définies dans le document de po
 - aucun secret, mot de passe, PAT ou clé privée n'est commité;
 - les fichiers `.tfvars`, `backend.hcl`, `.env` et `secrets/` sont ignorés par Git;
 - le state Terraform est stocké à distance dans Azure Blob Storage;
-- les clés privées des identités techniques sont stockées dans Azure Key Vault.
+- les secrets (SP credentials, PAT Snowflake) sont stockés dans Azure Key Vault;
+- **modèle KV-first** : les apprenants récupèrent les secrets depuis Key Vault
+  via leur compte AAD, aucun secret n'est stocké sur les VMs apprenants;
+- les fichiers `secrets/` locaux sont un **fallback de recovery** uniquement.
 
 ## Pipeline CI/CD
 

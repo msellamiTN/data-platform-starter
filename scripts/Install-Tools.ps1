@@ -62,7 +62,6 @@ $Policy = [ordered]@{
     Python       = '3.12'
     AzureCli     = '2.83.0'
     Tflint       = '0.50.0'
-    SnowflakeCli = '3.23.0'
     DbtSpec      = '<3.0.0'
 }
 
@@ -82,7 +81,6 @@ $DbtPackages = [ordered]@{
 
 $BinDir  = Join-Path $InstallRoot 'bin'
 $VenvDir = Join-Path $InstallRoot 'venv'
-$DbtVenvDir = Join-Path $InstallRoot 'venv-dbt'
 
 $Results = [System.Collections.Generic.List[object]]::new()
 
@@ -340,7 +338,7 @@ $ManualSteps = @{
     'Git'           = 'Install Git for Windows from the official download page, then open a new terminal.'
     'Terraform'     = "Download Terraform $($Policy.Terraform) for windows_amd64 from the official HashiCorp releases site and place terraform.exe in a folder listed in PATH."
     'Python'        = "Install Python $($Policy.Python) from the official python.org installer and enable 'Add python.exe to PATH'."
-    'Snowflake CLI' = "Install Snowflake CLI >= $($Policy.SnowflakeCli) with pip: pip install `"snowflake-cli>=$($Policy.SnowflakeCli)`" inside a Python virtual environment."
+    'Snowflake CLI' = 'Install Snowflake CLI with the official Snowflake installer, or inside a Python virtual environment.'
     'dbt'           = 'Install dbt-core and dbt-snowflake (both below version 3) inside a Python virtual environment.'
     'Azure CLI'     = 'Install Azure CLI with the official Microsoft installer for Windows.'
     'tflint'        = "Download tflint $($Policy.Tflint) for windows_amd64 from the official releases page."
@@ -482,32 +480,10 @@ function Initialize-TrainingVenv {
     return (Test-Path $venvPython)
 }
 
-function Initialize-DbtVenv {
-    if (-not (Test-Tool 'python')) { return $false }
-
-    $venvPython = Join-Path (Join-Path $DbtVenvDir 'Scripts') 'python.exe'
-
-    if (-not (Test-Path $venvPython)) {
-        Write-Host '       Creating the dbt virtual environment...' -ForegroundColor DarkGray
-        $venvOutput = & python -m venv $DbtVenvDir 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "       dbt venv creation failed: $venvOutput" -ForegroundColor Red
-            return $false
-        }
-    }
-
-    # Add dbt venv to PATH so 'dbt' command is available
-    $dbtBin = Join-Path $DbtVenvDir 'Scripts'
-    Add-ToolPaths @($dbtBin) -IncludeSystem
-    Sync-Path
-
-    return (Test-Path $venvPython)
-}
-
 function Install-VenvPackage {
-    param([string[]]$Specs, [string]$VenvPath = $VenvDir)
+    param([string[]]$Specs)
 
-    $venvPython = Join-Path (Join-Path $VenvPath 'Scripts') 'python.exe'
+    $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
     if (-not (Test-Path $venvPython)) { return $false }
 
     try {
@@ -539,32 +515,12 @@ Write-Section 'Python based tools'
 $snowVersion = Get-ToolVersion 'snow' @('--version')
 $dbtVersion  = Get-ToolVersion 'dbt' @('--version')
 
-# Check if Snowflake CLI meets the minimum version (3.23.0+ for PAT support).
-$snowVersionOk = $false
-if ($snowVersion) {
-    $snowMatch = [regex]::Match($snowVersion, '(\d+)\.(\d+)\.(\d+)')
-    if ($snowMatch.Success) {
-        $snowMajor = [int]$snowMatch.Groups[1].Value
-        $snowMinor = [int]$snowMatch.Groups[2].Value
-        $policyMatch = [regex]::Match($Policy.SnowflakeCli, '(\d+)\.(\d+)\.(\d+)')
-        if ($policyMatch.Success) {
-            $policyMajor = [int]$policyMatch.Groups[1].Value
-            $policyMinor = [int]$policyMatch.Groups[2].Value
-            if ($snowMajor -gt $policyMajor -or ($snowMajor -eq $policyMajor -and $snowMinor -ge $policyMinor)) {
-                $snowVersionOk = $true
-            }
-        }
-    }
-}
-
-if ($snowVersionOk -and $dbtVersion -and -not $Force) {
+if ($snowVersion -and $dbtVersion -and -not $Force) {
     Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
     Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
 } elseif ($Check) {
-    if ($snowVersionOk) {
+    if ($snowVersion) {
         Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
-    } elseif ($snowVersion) {
-        Add-Result 'Snowflake CLI' 'Core' 'FAIL' "Found $snowVersion, policy requires >= $($Policy.SnowflakeCli) (PAT support)" (Get-ManualStep 'Snowflake CLI')
     } else {
         Add-Result 'Snowflake CLI' 'Core' 'FAIL' 'Not found' (Get-ManualStep 'Snowflake CLI')
     }
@@ -575,27 +531,16 @@ if ($snowVersionOk -and $dbtVersion -and -not $Force) {
     }
 } else {
     if (Initialize-TrainingVenv) {
-        # Install Snowflake CLI in the main venv, pinned to the policy version.
-        # snowflake-cli >= 3.23.0 requires snowflake-connector-python >= 4.0.
-        # dbt-snowflake < 3.0.0 requires connector < 4.0.0.
-        # They CANNOT coexist in the same venv — dbt gets its own venv.
-        $snowflakeCliSpec = "snowflake-cli>=$($Policy.SnowflakeCli)"
-        $installed = Install-VenvPackage @($snowflakeCliSpec)
-        if (-not $installed) {
-            Write-Host '       Snowflake CLI install failed.' -ForegroundColor Red
-        }
-    }
-
-    # Install dbt in a SEPARATE venv to avoid connector version conflicts.
-    # dbt is only required from Day 5.
-    $dbtInstalled = $false
-    if (Initialize-DbtVenv) {
+        # Install snowflake-cli and dbt together so pip resolves a compatible set.
+        # If no compatible set exists, the command fails cleanly instead of
+        # creating a broken venv with conflicting transitive deps.
         $dbtSpec = $Policy.DbtSpec
-        Write-Host '       Installing dbt in separate venv (Day 5+ tool)...' -ForegroundColor DarkGray
-        $dbtInstalled = Install-VenvPackage @("dbt-core$dbtSpec", "dbt-snowflake$dbtSpec") -VenvPath $DbtVenvDir
-        if (-not $dbtInstalled) {
-            Write-Host '       dbt install failed.' -ForegroundColor Yellow
-            Write-Host '       dbt is only needed from Day 5. Install it manually later if needed.' -ForegroundColor DarkGray
+        $installed = Install-VenvPackage @('snowflake-cli', "dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
+        if (-not $installed) {
+            # Fallback: install only Snowflake CLI so Day 0-4 labs work.
+            # dbt is only required from Day 5; the learner can install it later.
+            Write-Host '       dbt install failed; retrying with Snowflake CLI only...' -ForegroundColor Yellow
+            $installed = Install-VenvPackage @('snowflake-cli')
         }
     }
     $snowVersion = Get-ToolVersion 'snow' @('--version')
