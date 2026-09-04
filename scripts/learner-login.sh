@@ -38,12 +38,12 @@ done
 
 if [[ -z "$learner_prefix" ]]; then
   printf 'Usage: source %s <LearnerPrefix> [--secrets-file <path>]\n' "${BASH_SOURCE[0]}" >&2
-  printf '  LearnerPrefix: APP01 to APP10\n' >&2
+  printf '  LearnerPrefix: APP01 to APP12\n' >&2
   return 2 2>/dev/null || exit 2
 fi
 
 if [[ ! "$learner_prefix" =~ ^APP[0-9]{2}$ ]]; then
-  printf '[FAIL] Invalid prefix: %s (expected APP01-APP10)\n' "$learner_prefix" >&2
+  printf '[FAIL] Invalid prefix: %s (expected APP01-APP12)\n' "$learner_prefix" >&2
   return 2 2>/dev/null || exit 2
 fi
 

@@ -1,9 +1,14 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-    Creates learner users in Azure AD (Entra ID) and Azure DevOps.
+    [DEPRECATED] Creates learner users in Azure AD (Entra ID) and Azure DevOps.
 
 .DESCRIPTION
+    DEPRECATED: Replaced by project/02-azuread-learners + project/03-devops-setup
+    Terraform modules. Kept for backward compatibility. Use Terraform instead:
+      cd project/02-azuread-learners && terraform apply
+      cd project/03-devops-setup && terraform apply
+
     Reads a users file (format: username: password) and creates each user
     in Azure AD with the tenant's default verified domain.
     Assigns a subscription role (Reader by default).

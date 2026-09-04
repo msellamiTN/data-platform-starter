@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
 # Add-SnowflakeLearners.sh
-# Creates individual Snowflake users for each learner.
+# [DEPRECATED] Creates individual Snowflake users for each learner.
+#
+# DEPRECATED: Replaced by project/01-snowflake-learners Terraform module.
+# Kept for backward compatibility. Use Terraform instead:
+#   cd project/01-snowflake-learners && terraform apply
 #
 # For each learner:
-#   - Creates a Snowflake user (apprenant01 to apprenant10)
+#   - Creates a Snowflake user (apprenant01 to apprenant12)
 #   - Sets a password (14+ chars, compliant with Snowflake policy)
 #   - Grants SYSADMIN role
 #
@@ -55,7 +59,7 @@ echo ""
 # Pattern: SnowflakeLearner2026@XX (24 chars)
 # ------------------------------------------------------------------
 
-LEARNER_COUNT=10
+LEARNER_COUNT=12
 MODE="PROVISION"
 if $DRY_RUN; then MODE="DRY RUN (no changes)"; fi
 
@@ -169,7 +173,7 @@ else
         echo ""
         echo "Learners can login to Snowflake web:"
         echo "  https://app.snowflake.com"
-        echo "  Username: apprenant01 to apprenant10"
+        echo "  Username: apprenant01 to apprenant12"
         echo "  Password: from $SECRETS_FILE"
         echo ""
         echo "Or via CLI:"

@@ -1,0 +1,20 @@
+# Terraform state and plan files
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+
+# Terraform directory
+.terraform/
+.terraform.lock.hcl
+
+# tfvars (contains learner-specific values)
+terraform.tfvars
+*.auto.tfvars
+
+# Generated files
+generated.tf
+
+# Secrets
+secrets/
+*.pem
+*.key

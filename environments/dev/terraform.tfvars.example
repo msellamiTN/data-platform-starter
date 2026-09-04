@@ -4,7 +4,8 @@
 # terraform.tfvars is never committed to Git.
 #
 # Never put passwords, PATs or private keys in this file.
-# The PAT is passed via TF_VAR_snowflake_token environment variable.
+# The PAT is read automatically from secrets/snowflake_pat.txt by provider.tf.
+# You do NOT need to set snowflake_token here or as an env var.
 
 learner_prefix         = "ABC"
 environment            = "DEV"

@@ -1,9 +1,13 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-    Creates service principals for each learner with secret-based authentication.
+    [DEPRECATED] Creates service principals for each learner with secret-based authentication.
 
 .DESCRIPTION
+    DEPRECATED: The training now uses a shared service principal model
+    (secrets/shared-sp.txt) instead of per-learner SPs.
+    This script is kept for backward compatibility only.
+
     For each learner:
     - Creates an Azure AD app registration
     - Creates a service principal

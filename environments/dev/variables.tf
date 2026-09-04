@@ -15,8 +15,9 @@ variable "snowflake_user" {
 
 variable "snowflake_token" {
   type        = string
-  description = "Snowflake PAT (read from secrets/snowflake_pat.txt)"
+  description = "Snowflake PAT (optional - read from secrets/snowflake_pat.txt if not set)"
   sensitive   = true
+  default     = ""
 }
 
 variable "learner_prefix" {

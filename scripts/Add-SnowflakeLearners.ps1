@@ -1,11 +1,15 @@
 #requires -version 5.1
 <#
 .SYNOPSIS
-    Creates individual Snowflake users for each learner.
+    [DEPRECATED] Creates individual Snowflake users for each learner.
 
 .DESCRIPTION
+    DEPRECATED: Replaced by project/01-snowflake-learners Terraform module.
+    Kept for backward compatibility. Use Terraform instead:
+      cd project/01-snowflake-learners && terraform apply
+
     For each learner:
-    - Creates a Snowflake user (apprenant01 to apprenant10)
+    - Creates a Snowflake user (apprenant01 to apprenant12)
     - Sets a password (14+ chars, compliant with Snowflake password policy)
     - Grants SYSADMIN role
     - The user can login to app.snowflake.com and use CLI
@@ -69,7 +73,7 @@ Write-Host ''
 # Pattern: SnowflakeLearner2026@XX (24 chars, meets all requirements)
 # ------------------------------------------------------------------
 
-$learners = 1..10 | ForEach-Object {
+$learners = 1..12 | ForEach-Object {
     $padded = '{0:D2}' -f $_
     [PSCustomObject]@{
         Name     = "apprenant$padded"
@@ -209,7 +213,7 @@ if ($failed -gt 0) {
         Write-Host ''
         Write-Host 'Learners can login to Snowflake web:' -ForegroundColor DarkGray
         Write-Host '  https://app.snowflake.com' -ForegroundColor DarkGray
-        Write-Host "  Username: apprenant01 to apprenant10" -ForegroundColor DarkGray
+        Write-Host "  Username: apprenant01 to apprenant12" -ForegroundColor DarkGray
         Write-Host "  Password: from $secretsFile" -ForegroundColor DarkGray
         Write-Host ''
         Write-Host 'Or via CLI:' -ForegroundColor DarkGray
