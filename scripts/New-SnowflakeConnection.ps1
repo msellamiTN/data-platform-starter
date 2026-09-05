@@ -144,7 +144,7 @@ if ($missing.Count -gt 0) {
 }
 
 # ------------------------------------------------------------------
-# Resolve PAT: .env variable > file > prompt
+# Resolve PAT: .env variable > file > $env:TF_VAR_snowflake_token > prompt
 # ------------------------------------------------------------------
 
 $token = $envValues['SNOWFLAKE_PAT']
@@ -157,8 +157,14 @@ if (-not $token) {
     }
 }
 
+# Fallback: use TF_VAR_snowflake_token set by Learner-Login.ps1 in the current session
+if (-not $token -and $env:TF_VAR_snowflake_token) {
+    Write-Host "[INFO] Reading PAT from `$env:TF_VAR_snowflake_token (set by Learner-Login)" -ForegroundColor DarkGray
+    $token = $env:TF_VAR_snowflake_token.Trim()
+}
+
 if (-not $token) {
-    Write-Host "[INFO] SNOWFLAKE_PAT not found in .env or PAT file." -ForegroundColor Yellow
+    Write-Host "[INFO] SNOWFLAKE_PAT not found in .env, PAT file, or session env." -ForegroundColor Yellow
     $token = Read-Masked 'Enter Snowflake PAT (token):'
 }
 
