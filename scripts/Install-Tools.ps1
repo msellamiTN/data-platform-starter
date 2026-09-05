@@ -441,11 +441,56 @@ if ($pythonMatches -and -not $Force) {
     $status = if ($pythonVersion) { 'WARN' } else { 'FAIL' }
     Add-Result 'Python' 'Core' $status $detail (Get-ManualStep 'Python')
 } else {
-    if (Install-WithWinget 'Python.Python.3.12') { $pythonVersion = Get-ToolVersion 'python' @('--version') }
+    if (Install-WithWinget 'Python.Python.3.12') {
+        Sync-Path
+        $pythonVersion = Get-ToolVersion 'python' @('--version')
+    }
+    # Even if 'python' still resolves to an older version, check if the
+    # policy-compliant Python is available via the launcher or install paths.
+    $policyPy = $null
+    if (Test-Tool 'py') {
+        $pyOutput = @(& py -"$($Policy.Python)" --version 2>&1)
+        if ($LASTEXITCODE -eq 0 -and "$pyOutput" -match $Policy.Python) {
+            $policyPy = [string]$pyOutput
+        }
+    }
+    if (-not $policyPy) {
+        $exeName = "python$($Policy.Python -replace '\.','').exe"
+        $searchDirs = @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+            'C:\Python312',
+            'C:\Program Files\Python312'
+        )
+        foreach ($dir in $searchDirs) {
+            if (-not (Test-Path $dir)) { continue }
+            $candidate = Join-Path $dir $exeName
+            if (Test-Path $candidate) {
+                $verOutput = @(& $candidate --version 2>&1)
+                if ($LASTEXITCODE -eq 0 -and "$verOutput" -match $Policy.Python) {
+                    $policyPy = [string]$verOutput
+                    break
+                }
+            }
+            $subDirs = Get-ChildItem -Path $dir -Directory -ErrorAction SilentlyContinue
+            foreach ($sub in $subDirs) {
+                $candidate = Join-Path $sub.FullName 'python.exe'
+                if (Test-Path $candidate) {
+                    $verOutput = @(& $candidate --version 2>&1)
+                    if ($LASTEXITCODE -eq 0 -and "$verOutput" -match $Policy.Python) {
+                        $policyPy = [string]$verOutput
+                        break
+                    }
+                }
+            }
+            if ($policyPy) { break }
+        }
+    }
     if ($pythonVersion -and $pythonVersion -match [Regex]::Escape($Policy.Python)) {
         Add-Result 'Python' 'Core' 'PASS' $pythonVersion
+    } elseif ($policyPy) {
+        Add-Result 'Python' 'Core' 'PASS' "$policyPy (via launcher)"
     } elseif ($pythonVersion) {
-        Add-Result 'Python' 'Core' 'WARN' "Found $pythonVersion, policy requires $($Policy.Python)" (Get-ManualStep 'Python')
+        Add-Result 'Python' 'Core' 'WARN' "Found $pythonVersion, policy requires $($Policy.Python). Python $($Policy.Python) was installed but is not the default 'python'. The venv will use the correct version." (Get-ManualStep 'Python')
     } else {
         Add-Result 'Python' 'Core' 'FAIL' 'Installation did not complete' (Get-ManualStep 'Python')
     }

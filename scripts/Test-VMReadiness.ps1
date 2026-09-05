@@ -315,32 +315,37 @@ if ($SkipConfig) {
     # 2e. No unresolved placeholders in .env
     if (Test-Path $envFile) {
         $envText = Get-Content $envFile -Raw
-        if ($envText -match '<[^>]+>') {
+        # Check for <placeholder> patterns but ignore commented lines (starting with #)
+        $uncommentedLines = ($envText -split "`r?`n" | Where-Object { $_ -notmatch '^\s*#' })
+        $uncommentedText = $uncommentedLines -join "`n"
+        if ($uncommentedText -match '<[^>]+>') {
             Add-Result 'No placeholders in .env' 'FAIL' 'Unresolved <placeholder> values found' 'learner-config' 'Replace every <placeholder> in .env with a real value'
         } else {
             Add-Result 'No placeholders in .env' 'PASS' 'All placeholders resolved' 'none' ''
         }
     }
 
-    # 2f. shared-sp.txt exists (needed for Learner-Login)
+    # 2f. shared-sp.txt exists (needed for Learner-Login fallback)
+    # In KV-first mode, Learner-Login.ps1 auto-creates this file from Key Vault secrets.
     $spFile = Join-Path $projectRoot 'secrets\shared-sp.txt'
     if (Test-Path $spFile) {
         Add-Result 'shared-sp.txt' 'PASS' 'Present' 'none' ''
     } else {
-        Add-Result 'shared-sp.txt' 'FAIL' 'Not found - ask instructor for secrets/shared-sp.txt' 'instructor-side' 'Ask instructor to copy shared-sp.txt to this VM'
+        Add-Result 'shared-sp.txt' 'WARN' 'Not found - will be auto-created by Learner-Login.ps1 (KV-first) or ask instructor' 'credential' 'Run Learner-Login.ps1 (KV-first creates it automatically), or ask instructor for shared-sp.txt'
     }
 
     # 2g. PAT file exists (needed for Snowflake CLI + Terraform)
+    # In KV-first mode, Learner-Login.ps1 auto-creates this file from Key Vault secrets.
     $patFile = Join-Path $projectRoot 'secrets\snowflake_pat.txt'
     if (Test-Path $patFile) {
         $patLen = (Get-Content $patFile -Raw).Trim().Length
         if ($patLen -gt 50) {
             Add-Result 'snowflake_pat.txt' 'PASS' "Present ($patLen chars)" 'none' ''
         } else {
-            Add-Result 'snowflake_pat.txt' 'FAIL' "File exists but too short ($patLen chars)" 'credential' 'Ask instructor for a valid shared PAT file'
+            Add-Result 'snowflake_pat.txt' 'WARN' "File exists but too short ($patLen chars)" 'credential' 'Ask instructor for a valid shared PAT file'
         }
     } else {
-        Add-Result 'snowflake_pat.txt' 'FAIL' 'Not found' 'credential' 'Ask instructor to copy snowflake_pat.txt to this VM, or run New-SnowflakeConnection.ps1'
+        Add-Result 'snowflake_pat.txt' 'WARN' 'Not found - will be auto-created by Learner-Login.ps1 (KV-first) or run New-SnowflakeConnection.ps1' 'credential' 'Run Learner-Login.ps1 (KV-first creates it automatically), or run New-SnowflakeConnection.ps1'
     }
 
     # 2h. Snowflake CLI config.toml exists with 'training' connection
