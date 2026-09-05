@@ -114,7 +114,7 @@ if (Test-Path $labDir) {
             Pop-Location
         }
     } else {
-        Write-Host "[1/3] No terraform.tfstate in labs\$labDirName — skipping terraform destroy" -ForegroundColor DarkGray
+        Write-Host "[1/3] No terraform.tfstate in labs\$labDirName - skipping terraform destroy" -ForegroundColor DarkGray
     }
 } else {
     Write-Host "[1/3] Lab directory labs\$labDirName does not exist yet" -ForegroundColor DarkGray
@@ -191,7 +191,7 @@ if (Test-Path $labDir) {
         Pop-Location
     }
 } else {
-    Write-Host '[OK]   Lab directory does not exist — nothing to clean' -ForegroundColor DarkGray
+    Write-Host '[OK]   Lab directory does not exist - nothing to clean' -ForegroundColor DarkGray
 }
 
 # ------------------------------------------------------------------

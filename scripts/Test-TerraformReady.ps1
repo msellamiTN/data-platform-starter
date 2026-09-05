@@ -98,11 +98,15 @@ if (-not $tfExe) {
 }
 
 if ($tfExe) {
-    $tfVersion = & terraform version 2>&1 | Select-Object -First 1
-    if ($LASTEXITCODE -eq 0) {
+    $tfOutput = & terraform version 2>&1
+    $tfExit = $LASTEXITCODE
+    $tfVersion = ($tfOutput | Select-Object -First 1).ToString().Trim()
+    if ($tfExit -eq 0 -and $tfVersion) {
         Check-Ok "Terraform: $tfVersion"
     } else {
-        Check-Fail "Terraform found but 'terraform version' failed"
+        Check-Fail "Terraform found but 'terraform version' failed (exit $tfExit)"
+        Write-Host "       Output: $tfVersion" -ForegroundColor DarkGray
+        Write-Host "       Try: & `"$HOME\.data2ai\bin\terraform.exe`" version" -ForegroundColor DarkGray
     }
 } else {
     Check-Fail "Terraform not found in PATH or .data2ai\bin"
