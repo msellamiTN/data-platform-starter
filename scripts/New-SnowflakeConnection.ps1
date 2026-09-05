@@ -152,8 +152,13 @@ $patFilePath = Join-Path $projectRoot $PatFileRel
 
 if (-not $token) {
     if (Test-Path $patFilePath) {
-        Write-Host "[INFO] Reading PAT from $PatFileRel" -ForegroundColor DarkGray
-        $token = (Get-Content $patFilePath -Encoding UTF8 -Raw).Trim()
+        $patContent = Get-Content $patFilePath -Encoding UTF8 -Raw
+        if ($patContent) {
+            Write-Host "[INFO] Reading PAT from $PatFileRel" -ForegroundColor DarkGray
+            $token = $patContent.Trim()
+        } else {
+            Write-Host "[WARN] $PatFileRel exists but is empty." -ForegroundColor Yellow
+        }
     }
 }
 
