@@ -40,6 +40,13 @@ $ErrorActionPreference = 'Stop'
 $env:PYTHONIOENCODING = 'utf-8'
 Remove-Item Env:\PYTHONUTF8 -ErrorAction SilentlyContinue
 
+# Remove SNOWFLAKE_* env vars that the CLI picks up as connection overrides and
+# would conflict with PAT auth (SNOWFLAKE_PRIVATE_KEY_FILE is used by dbt on Day 4,
+# but forces private-key auth when present in the session env).
+Remove-Item Env:\SNOWFLAKE_PRIVATE_KEY_FILE -ErrorAction SilentlyContinue
+Remove-Item Env:\SNOWFLAKE_PRIVATE_KEY_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:\SNOWFLAKE_PRIVATE_KEY -ErrorAction SilentlyContinue
+
 # ------------------------------------------------------------------
 # Load .env if it exists (force UTF-8 to avoid cp1252 decoding errors)
 # ------------------------------------------------------------------
