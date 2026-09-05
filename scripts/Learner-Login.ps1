@@ -312,6 +312,9 @@ if (-not $kvFirstSuccess) {
             if ($patValue) {
                 Write-Host '[PASS] Snowflake PAT retrieved from Key Vault (via SP)' -ForegroundColor Green
             }
+        } else {
+            Write-Host '[WARN] SP login for KV fetch failed - will retry below.' -ForegroundColor Yellow
+            Write-Host "       $spLoginResult" -ForegroundColor DarkGray
         }
     }
 
@@ -328,9 +331,13 @@ if (-not $kvFirstSuccess) {
 }
 
 # ------------------------------------------------------------------
-# Login with SP (if not already logged in from fallback)
+# Login with SP — the lab session must end as the service principal.
+# Runs whenever the earlier SP-then-KV attempt did NOT succeed
+# ($spLoginExit -ne 0 or never attempted, e.g. after KV-first where
+# the session is still the AAD user). The AAD user lacks data-plane
+# roles (blob write fails); the SP has Storage Blob Data Contributor.
 # ------------------------------------------------------------------
-if (-not $kvFirstSuccess -and -not $spLoginExit) {
+if ($spLoginExit -ne 0) {
     Write-Host '[INFO] Logging in with shared service principal...' -ForegroundColor DarkGray
 
     $prevEAP = $ErrorActionPreference
