@@ -28,8 +28,8 @@ variable "learner_prefix" {
   description = "Unique uppercase prefix assigned to the learner"
 
   validation {
-    condition     = can(regex("^[A-Z][A-Z0-9]{2,4}$", var.learner_prefix))
-    error_message = "learner_prefix must contain 3-5 uppercase letters or digits."
+    condition     = can(regex("^[A-Z0-9_]{2,12}$", var.learner_prefix))
+    error_message = "learner_prefix must be 2-12 uppercase alphanumeric characters or underscore."
   }
 }
 
