@@ -76,3 +76,6 @@ preflight*.md
 preflight*.json
 connectivity*.md
 connectivity*.json
+
+# Office lock files
+~$*
