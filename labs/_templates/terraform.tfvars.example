@@ -9,6 +9,7 @@
 
 learner_prefix         = "APP01"
 environment            = "DEV"
+warehouse_size         = "X-SMALL"
 
 # Snowflake connection (from .env)
 snowflake_organization = "ZVFXOZW"
