@@ -36,6 +36,11 @@
 .EXAMPLE
     .\scripts\Learner-Login.ps1 -LearnerPrefix APP01
     .\scripts\Learner-Login.ps1 -LearnerPrefix APP03 -ForceFallback
+    .\scripts\Learner-Login.ps1 -LearnerPrefix APP01 -SkipClear
+
+    By default the script first clears any previous Azure connection and
+    service-principal session (via Clear-AzSession.ps1) so Terraform and az
+    never pick up stale credentials. Use -SkipClear to keep the session.
 #>
 
 [CmdletBinding()]
@@ -44,12 +49,23 @@ param(
     [ValidatePattern('^APP\d{2}$')]
     [string]$LearnerPrefix,
     [string]$SecretsFile,
-    [switch]$ForceFallback
+    [switch]$ForceFallback,
+    [switch]$SkipClear
 )
 
 $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# ------------------------------------------------------------------
+# Clear any previous Azure connection / service-principal session first.
+# Prevents Terraform or az from picking up stale SP credentials.
+# Skip with -SkipClear if you intentionally want to keep the session.
+# ------------------------------------------------------------------
+$clearScript = Join-Path $scriptDir 'Clear-AzSession.ps1'
+if (-not $SkipClear -and (Test-Path $clearScript)) {
+    & $clearScript
+}
 $projectRoot = Split-Path -Parent $scriptDir
 $envValues = @{}
 
@@ -59,7 +75,8 @@ $envValues = @{}
 # ------------------------------------------------------------------
 $localBin = Join-Path $HOME '.data2ai\bin'
 $localVenv = Join-Path $HOME '.data2ai\venv\Scripts'
-foreach ($dir in @($localBin, $localVenv)) {
+$localDbtVenv = Join-Path $HOME '.data2ai\venv-dbt\Scripts'
+foreach ($dir in @($localBin, $localVenv, $localDbtVenv)) {
     if (Test-Path $dir) {
         $escaped = [Regex]::Escape($dir)
         if ($env:PATH -notmatch "(^|;)$escaped(;|$)") {

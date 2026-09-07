@@ -79,8 +79,9 @@ $DbtPackages = [ordered]@{
     'dbt-labs/dbt_utils'                  = '1.3.3'
 }
 
-$BinDir  = Join-Path $InstallRoot 'bin'
-$VenvDir = Join-Path $InstallRoot 'venv'
+$BinDir     = Join-Path $InstallRoot 'bin'
+$VenvDir    = Join-Path $InstallRoot 'venv'
+$DbtVenvDir = Join-Path $InstallRoot 'venv-dbt'
 
 $Results = [System.Collections.Generic.List[object]]::new()
 
@@ -339,7 +340,7 @@ $ManualSteps = @{
     'Terraform'     = "Download Terraform $($Policy.Terraform) for windows_amd64 from the official HashiCorp releases site and place terraform.exe in a folder listed in PATH."
     'Python'        = "Install Python $($Policy.Python) from the official python.org installer and enable 'Add python.exe to PATH'."
     'Snowflake CLI' = 'Install Snowflake CLI with the official Snowflake installer, or inside a Python virtual environment.'
-    'dbt'           = 'Install dbt-core and dbt-snowflake (both below version 3) inside a Python virtual environment.'
+    'dbt'           = 'Install dbt-core and dbt-snowflake (both below version 3) in a venv SEPARATE from Snowflake CLI to avoid dependency conflicts: py -3.12 -m venv $HOME\.data2ai\venv-dbt; & $HOME\.data2ai\venv-dbt\Scripts\pip.exe install "dbt-core<3.0.0" "dbt-snowflake<3.0.0"'
     'Azure CLI'     = 'Install Azure CLI with the official Microsoft installer for Windows.'
     'tflint'        = "Download tflint $($Policy.Tflint) for windows_amd64 from the official releases page."
     'VS Code'       = 'Install Visual Studio Code from the official Microsoft download page, or use another editor.'
@@ -501,7 +502,8 @@ if ($pythonMatches -and -not $Force) {
 # ------------------------------------------------------------------
 
 function Get-VenvScriptPath {
-    return (Join-Path $VenvDir 'Scripts')
+    param([string]$Dir = $VenvDir)
+    return (Join-Path $Dir 'Scripts')
 }
 
 function Get-PolicyPython {
@@ -544,7 +546,8 @@ function Get-PolicyPython {
 }
 
 function Get-VenvPythonVersion {
-    $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
+    param([string]$Dir = $VenvDir)
+    $venvPython = Join-Path (Get-VenvScriptPath $Dir) 'python.exe'
     if (-not (Test-Path $venvPython)) { return $null }
     try {
         $ver = @(& $venvPython --version 2>&1)
@@ -554,14 +557,15 @@ function Get-VenvPythonVersion {
 }
 
 function Initialize-TrainingVenv {
-    $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
+    param([string]$Dir = $VenvDir)
+    $venvPython = Join-Path (Get-VenvScriptPath $Dir) 'python.exe'
 
     # Check if an existing venv was created with the wrong Python version.
     if (Test-Path $venvPython) {
-        $venvVer = Get-VenvPythonVersion
+        $venvVer = Get-VenvPythonVersion $Dir
         if ($venvVer -and $venvVer -notmatch [Regex]::Escape($Policy.Python)) {
             Write-Host "       Existing venv uses $venvVer; recreating with Python $($Policy.Python)..." -ForegroundColor Yellow
-            Remove-Item -Path $VenvDir -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $Dir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -572,7 +576,7 @@ function Initialize-TrainingVenv {
             return $false
         }
         Write-Host "       Creating the isolated virtual environment with $($pyCmd -join ' ')..." -ForegroundColor DarkGray
-        $venvOutput = & $pyCmd[0] @($pyCmd[1..($pyCmd.Length - 1)]) -m venv $VenvDir 2>&1
+        $venvOutput = & $pyCmd[0] @($pyCmd[1..($pyCmd.Length - 1)]) -m venv $Dir 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "       venv creation failed: $venvOutput" -ForegroundColor Red
             return $false
@@ -580,16 +584,16 @@ function Initialize-TrainingVenv {
     }
 
     # Always ensure the venv Scripts dir is in PATH
-    Add-ToolPaths @(Get-VenvScriptPath) -IncludeSystem
+    Add-ToolPaths @(Get-VenvScriptPath $Dir) -IncludeSystem
     Sync-Path
 
     return (Test-Path $venvPython)
 }
 
 function Install-VenvPackage {
-    param([string[]]$Specs)
+    param([string[]]$Specs, [string]$Dir = $VenvDir)
 
-    $venvPython = Join-Path (Get-VenvScriptPath) 'python.exe'
+    $venvPython = Join-Path (Get-VenvScriptPath $Dir) 'python.exe'
     if (-not (Test-Path $venvPython)) { return $false }
 
     try {
@@ -636,32 +640,43 @@ if ($snowVersion -and $dbtVersion -and -not $Force) {
         Add-Result 'dbt' 'Course' 'FAIL' 'Not found (required from Day 5)' (Get-ManualStep 'dbt')
     }
 } else {
+    $dbtSpec = $Policy.DbtSpec
+    $dbtInstalledWithSnow = $false
+
     if (Initialize-TrainingVenv) {
-        # Install snowflake-cli and dbt together so pip resolves a compatible set.
-        # If no compatible set exists, the command fails cleanly instead of
-        # creating a broken venv with conflicting transitive deps.
-        $dbtSpec = $Policy.DbtSpec
-        $installed = Install-VenvPackage @('snowflake-cli', "dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
-        if (-not $installed) {
-            # Fallback: install only Snowflake CLI so Day 0-4 labs work.
-            # dbt is only required from Day 5; the learner can install it later.
-            Write-Host '       dbt install failed; retrying with Snowflake CLI only...' -ForegroundColor Yellow
-            $installed = Install-VenvPackage @('snowflake-cli')
+        # Try installing snowflake-cli and dbt together first so pip resolves
+        # a single compatible set (fast path when there is no real conflict).
+        $dbtInstalledWithSnow = Install-VenvPackage @('snowflake-cli', "dbt-core$dbtSpec", "dbt-snowflake$dbtSpec")
+        if (-not $dbtInstalledWithSnow) {
+            # Fallback: install only Snowflake CLI so Day 0-4 labs work
+            # immediately. dbt is handled separately below.
+            Write-Host '       Combined install failed (dependency conflict); installing Snowflake CLI alone...' -ForegroundColor Yellow
+            Install-VenvPackage @('snowflake-cli') | Out-Null
         }
     }
+
     $snowVersion = Get-ToolVersion 'snow' @('--version')
-    $dbtVersion  = Get-ToolVersion 'dbt' @('--version')
     if ($snowVersion) {
         Add-Result 'Snowflake CLI' 'Core' 'PASS' $snowVersion
     } else {
         Add-Result 'Snowflake CLI' 'Core' 'FAIL' 'Installation did not complete' (Get-ManualStep 'Snowflake CLI')
     }
+
+    $dbtVersion = Get-ToolVersion 'dbt' @('--version')
+    if (-not $dbtVersion -and -not $dbtInstalledWithSnow) {
+        # snowflake-cli and dbt could not share one dependency graph.
+        # Install dbt in its own isolated venv (.data2ai\venv-dbt) instead of
+        # skipping it — Test-VMReadiness.ps1 and Learner-Login.ps1 already
+        # add venv-dbt\Scripts to PATH, so `dbt` still resolves in the session.
+        Write-Host '       Installing dbt in an isolated venv (venv-dbt) to avoid the Snowflake CLI conflict...' -ForegroundColor DarkGray
+        if (Initialize-TrainingVenv -Dir $DbtVenvDir) {
+            Install-VenvPackage @("dbt-core$dbtSpec", "dbt-snowflake$dbtSpec") -Dir $DbtVenvDir | Out-Null
+        }
+        $dbtVersion = Get-ToolVersion 'dbt' @('--version')
+    }
+
     if ($dbtVersion) {
         Add-Result 'dbt' 'Course' 'PASS' $dbtVersion
-    } elseif ($installed -and -not (Get-ToolVersion 'dbt' @('--version'))) {
-        # dbt was skipped because it conflicted with Snowflake CLI.
-        # Mark as WARN since it is only needed from Day 5.
-        Add-Result 'dbt' 'Course' 'WARN' 'Skipped due to dependency conflict with Snowflake CLI (reinstall with pip install dbt-core<3.0.0 dbt-snowflake<3.0.0 before Day 5)' (Get-ManualStep 'dbt')
     } else {
         Add-Result 'dbt' 'Course' 'FAIL' 'Installation did not complete' (Get-ManualStep 'dbt')
     }

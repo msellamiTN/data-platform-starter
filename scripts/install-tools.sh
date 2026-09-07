@@ -68,6 +68,8 @@ done
 bin_dir="${install_root}/bin"
 venv_dir="${install_root}/venv"
 venv_bin="${venv_dir}/bin"
+dbt_venv_dir="${install_root}/venv-dbt"
+dbt_venv_bin="${dbt_venv_dir}/bin"
 
 names=()
 tiers=()
@@ -137,7 +139,7 @@ manual_step() {
     Terraform) printf 'Download Terraform %s for %s_%s from the official HashiCorp releases site and place the binary in a folder listed in PATH.' "$POLICY_TERRAFORM" "$os" "$arch" ;;
     Python) printf 'Install Python %s with your package manager or the official python.org installer.' "$POLICY_PYTHON" ;;
     'Snowflake CLI') printf 'Install Snowflake CLI with the official Snowflake procedure, or inside a Python virtual environment.' ;;
-    dbt) printf 'Install dbt-core and dbt-snowflake (both below version 3) inside a Python virtual environment.' ;;
+    dbt) printf 'Install dbt-core and dbt-snowflake (both below version 3) in a venv SEPARATE from Snowflake CLI to avoid dependency conflicts: python3.12 -m venv $HOME/.data2ai/venv-dbt && $HOME/.data2ai/venv-dbt/bin/pip install "dbt-core<3.0.0" "dbt-snowflake<3.0.0"' ;;
     'Azure CLI') printf 'Install Azure CLI with the official Microsoft procedure for your distribution.' ;;
     tflint) printf 'Download tflint %s for %s_%s from the official releases page.' "$POLICY_TFLINT" "$os" "$arch" ;;
     'VS Code') printf 'Install Visual Studio Code from the official Microsoft download page, or use another editor.' ;;
@@ -217,32 +219,36 @@ policy_python_command() {
 }
 
 init_venv() {
+  local target_dir="${1:-$venv_dir}"
+  local target_bin="${target_dir}/bin"
   local py
   # If an existing venv has the wrong Python version, remove it.
-  if [[ -x "${venv_bin}/python" ]]; then
+  if [[ -x "${target_bin}/python" ]]; then
     local venv_ver
-    venv_ver="$("${venv_bin}/python" --version 2>&1 || true)"
+    venv_ver="$("${target_bin}/python" --version 2>&1 || true)"
     if [[ -n "$venv_ver" && "$venv_ver" != *"$POLICY_PYTHON"* ]]; then
       printf '       Existing venv uses %s; recreating with Python %s...\n' "$venv_ver" "$POLICY_PYTHON" >&2
-      rm -rf "$venv_dir"
+      rm -rf "$target_dir"
     fi
   fi
-  if [[ ! -x "${venv_bin}/python" ]]; then
+  if [[ ! -x "${target_bin}/python" ]]; then
     py="$(policy_python_command)" || return 1
     printf '       Creating the isolated virtual environment with %s...\n' "$py" >&2
-    "$py" -m venv "$venv_dir" 2>&1 | sed 's/^/       /' >&2
+    "$py" -m venv "$target_dir" 2>&1 | sed 's/^/       /' >&2
   fi
   # Always ensure the venv bin dir is in PATH
-  add_user_path_hint "$venv_bin"
-  [[ -x "${venv_bin}/python" ]]
+  add_user_path_hint "$target_bin"
+  [[ -x "${target_bin}/python" ]]
 }
 
 install_venv_package() {
-  [[ -x "${venv_bin}/python" ]] || return 1
+  local target_dir="$1"; shift
+  local target_bin="${target_dir}/bin"
+  [[ -x "${target_bin}/python" ]] || return 1
   printf '       Upgrading pip...\n' >&2
-  "${venv_bin}/python" -m pip install --upgrade pip 2>&1 | sed 's/^/       /' >&2
+  "${target_bin}/python" -m pip install --upgrade pip 2>&1 | sed 's/^/       /' >&2
   printf '       Installing: %s\n' "$*" >&2
-  "${venv_bin}/python" -m pip install --prefer-binary "$@" 2>&1 | sed 's/^/       /' >&2
+  "${target_bin}/python" -m pip install --prefer-binary "$@" 2>&1 | sed 's/^/       /' >&2
   return $?
 }
 
@@ -262,6 +268,7 @@ printf ' Policy       : docs/version-policy.md\n'
 
 [[ -d "$bin_dir" ]] && add_user_path_hint "$bin_dir"
 [[ -d "$venv_bin" ]] && add_user_path_hint "$venv_bin"
+[[ -d "$dbt_venv_bin" ]] && add_user_path_hint "$dbt_venv_bin"
 
 # ------------------------------------------------------------------
 # Git
@@ -348,7 +355,7 @@ if [[ -n "$snow_version" ]] && ! $force; then
 elif $check_only; then
   add_result 'Snowflake CLI' 'Core' 'FAIL' 'Not found' "$(manual_step 'Snowflake CLI')"
 else
-  if init_venv && install_venv_package snowflake-cli; then
+  if init_venv "$venv_dir" && install_venv_package "$venv_dir" snowflake-cli; then
     add_user_path_hint "$venv_bin"
   fi
   snow_version="$(tool_version snow --version || true)"
@@ -371,10 +378,23 @@ if [[ -n "$dbt_version" ]] && ! $force; then
 elif $check_only; then
   add_result 'dbt' 'Course' 'FAIL' 'Not found (required from Day 5)' "$(manual_step dbt)"
 else
-  if init_venv && install_venv_package "dbt-core${POLICY_DBT_SPEC}" "dbt-snowflake${POLICY_DBT_SPEC}"; then
+  dbt_installed_with_snow=false
+  # Try installing dbt into the same venv as Snowflake CLI first (fast path
+  # when there is no real dependency conflict).
+  if init_venv "$venv_dir" && install_venv_package "$venv_dir" "dbt-core${POLICY_DBT_SPEC}" "dbt-snowflake${POLICY_DBT_SPEC}"; then
     add_user_path_hint "$venv_bin"
+    dbt_installed_with_snow=true
   fi
   dbt_version="$(tool_version dbt --version || true)"
+  if [[ -z "$dbt_version" ]] && ! $dbt_installed_with_snow; then
+    # snowflake-cli and dbt could not share one dependency graph. Install dbt
+    # in its own isolated venv-dbt instead of skipping it.
+    printf '       Installing dbt in an isolated venv (venv-dbt) to avoid the Snowflake CLI conflict...\n' >&2
+    if init_venv "$dbt_venv_dir" && install_venv_package "$dbt_venv_dir" "dbt-core${POLICY_DBT_SPEC}" "dbt-snowflake${POLICY_DBT_SPEC}"; then
+      add_user_path_hint "$dbt_venv_bin"
+    fi
+    dbt_version="$(tool_version dbt --version || true)"
+  fi
   if [[ -n "$dbt_version" ]]; then
     add_result 'dbt' 'Course' 'PASS' "$dbt_version"
   else
