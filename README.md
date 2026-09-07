@@ -152,6 +152,30 @@ snow sql -q 'SELECT 1' -c training
 
 Chaque atelier du parcours indique quels fichiers créer et où. Le dépôt cloné est la **racine de travail** pour tous les fichiers `.tf`, modules et configurations.
 
+## 🧭 Navigation des ateliers
+
+| # | Atelier | Lab (instructions) | Dossier de travail | Objectif |
+|---|---------|--------------------|--------------------|----------|
+| M00 | Setup | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-00/module-00-setup/lab.md) | — | Préparer l'environnement : outils, connexion Snowflake, login Azure |
+| M01 | IaC Workflow | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-01/module-01-iac-workflow/lab.md) | `labs/m01-iac-workflow` | Premier déploiement Terraform : database, schema, warehouse |
+| M02 | State Management | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-01/module-02-state-management/lab.md) | `labs/m02-state-management` | State local puis migration vers le backend Azure |
+| M03 | Import Brownfield | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-01/module-03-import-brownfield/lab.md) | `labs/m03-import-brownfield` | Importer une ressource existante, dérive, bloc `moved` |
+| M04 | Variables & Outputs | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-01/module-04-variables-outputs/lab.md) | `labs/m04-variables-outputs` | Variables validées, précédence, outputs, `lifecycle` |
+| M05 | Modules | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-02/module-05-modules/lab.md) | `labs/m05-modules` | Extraire et réutiliser un module `landing-zone` |
+| M06 | Dynamic Logic | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-02/module-06-dynamic-logic/lab.md) | `labs/m06-dynamic-logic` | `for_each`, `count`, expressions `for`, blocs `dynamic` |
+| M07 | CI/CD Pipeline | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-02/module-07-cicd-pipeline/lab.md) | `labs/m07-cicd-pipeline` | Pipeline Azure DevOps : validate, plan, approval, apply, audit |
+| M08 | Environments | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-02/module-08-environments/lab.md) | `labs/m08-environments` | Layout `dev/` `uat/` `prod/` avec backends isolés |
+| M09 | Snowflake Advanced | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-03/module-09-snowflake-advanced/lab.md) | `labs/m09-snowflake-advanced` | Ressources Snowflake avancées |
+| M10 | Security & Auth | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-03/module-10-security-auth/lab.md) | `labs/m10-security-auth` | Authentification et sécurité |
+| M11 | RBAC | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-04/module-11-rbac/lab.md) | `labs/m11-rbac` | Rôles, grants et contrôle d'accès |
+| M12 | Capstone | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-04/module-12-capstone/lab.md) | `labs/m12-capstone` | Projet de synthèse |
+| M13 | FinOps & Observability | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-04/module-13-finops-observability/lab.md) | `labs/m13-finops-observability` | Coûts, tags et observabilité |
+| M14 | Data Products | [lab.md](https://github.com/msellamiTN/Snowflake-terraform/blob/master/courses/day-04/module-14-data-products/lab.md) | `labs/m14-data-products` | Data products de bout en bout |
+
+> 💡 **Astuce** : chaque dossier d'atelier contient un `terraform.tfvars.example`
+> à copier en `terraform.tfvars` et un `provider.tf` qui lit le PAT depuis
+> `secrets/snowflake_pat.txt` (fallback : `TF_VAR_snowflake_token`).
+
 ## Ce qui n'est PAS inclus
 
 - aucun fichier `versions.tf`, `provider.tf`, `main.tf`, `variables.tf` ou `outputs.tf`;
