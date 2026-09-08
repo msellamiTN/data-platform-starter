@@ -341,13 +341,48 @@ function Install-VSCode {
     # Try winget first, then fall back to the official system installer.
     if (Install-WithWinget 'Microsoft.VisualStudioCode') { return $true }
 
+    $downloadDir = Join-Path $env:ProgramData 'data2ai-setup'
     $installer = $null
     try {
-        # System-wide installer (works when running as SYSTEM)
-        $url = 'https://update.codevisualstudio.com/latest/win32-x64/stable'
-        $installer = Join-Path $env:TEMP 'VSCodeSetup.exe'
-        Write-Host '       Downloading VS Code installer...' -ForegroundColor DarkGray
-        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+        # Use ProgramData instead of TEMP (TEMP can be corrupted or restricted for SYSTEM)
+        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+        $installer = Join-Path $downloadDir 'VSCodeSetup.exe'
+        $url = 'https://code.visualstudio.com/sha/download?build=stable&os=win32-x64'
+
+        $downloadOk = $false
+        foreach ($attempt in 1..2) {
+            Write-Host "       Downloading VS Code installer (attempt $attempt)..." -ForegroundColor DarkGray
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -ErrorAction Stop
+                $downloadOk = $true
+                break
+            } catch {
+                Write-Host ("       Download attempt {0} failed: {1}" -f $attempt, $_.Exception.Message) -ForegroundColor DarkGray
+                Start-Sleep -Seconds 5
+            }
+        }
+        if (-not $downloadOk) { return $false }
+
+        # Verify the download is a valid Windows executable (MZ header) and not tiny.
+        if (Test-Path $installer) {
+            $fileInfo = Get-Item $installer
+            $minSize = 30MB
+            if ($fileInfo.Length -lt $minSize) {
+                Write-Host ("       Downloaded file too small ({0:N0} bytes), not a valid installer" -f $fileInfo.Length) -ForegroundColor DarkGray
+                return $false
+            }
+            $fs = [System.IO.File]::OpenRead($installer)
+            try {
+                $magic = New-Object byte[] 2
+                [void]$fs.Read($magic, 0, 2)
+                if ($magic[0] -ne 0x4D -or $magic[1] -ne 0x5A) {
+                    Write-Host '       Downloaded file is not a valid executable (missing MZ header)' -ForegroundColor DarkGray
+                    return $false
+                }
+            } finally { $fs.Dispose() }
+        } else {
+            return $false
+        }
 
         Write-Host '       Installing VS Code (this may take a minute)...' -ForegroundColor DarkGray
         $process = Start-Process -FilePath $installer `
