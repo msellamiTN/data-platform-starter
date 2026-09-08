@@ -299,112 +299,6 @@ function Install-WithWinget {
     }
 }
 
-function Install-Python {
-    # Skip if the policy version is already available via the launcher.
-    if (Test-Tool 'py') {
-        $pyOutput = @(& py -"$($Policy.Python)" --version 2>&1)
-        if ($LASTEXITCODE -eq 0 -and "$pyOutput" -match $Policy.Python) {
-            return $true
-        }
-    }
-
-    # Try winget first, then fall back to the official python.org installer.
-    if (Install-WithWinget "Python.Python.$($Policy.Python)") { return $true }
-
-    $fullVersion = "$($Policy.Python).10"
-    $installer = $null
-    try {
-        $url = "https://www.python.org/ftp/python/$fullVersion/python-$fullVersion-amd64.exe"
-        $installer = Join-Path $env:TEMP 'PythonSetup.exe'
-        Write-Host '       Downloading Python installer...' -ForegroundColor DarkGray
-        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-
-        Write-Host '       Installing Python (this may take a minute)...' -ForegroundColor DarkGray
-        $process = Start-Process -FilePath $installer `
-            -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_launcher=1' `
-            -Wait -PassThru
-        if ($process.ExitCode -ne 0) {
-            Write-Host ("       Python installer exited with code {0}" -f $process.ExitCode) -ForegroundColor DarkGray
-            return $false
-        }
-        Sync-Path
-        return $true
-    } catch {
-        Write-Host ("       Python installation failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
-        return $false
-    } finally {
-        if ($installer -and (Test-Path $installer)) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
-    }
-}
-
-function Install-VSCode {
-    # Try winget first, then fall back to the official system installer.
-    if (Install-WithWinget 'Microsoft.VisualStudioCode') { return $true }
-
-    $downloadDir = Join-Path $env:ProgramData 'data2ai-setup'
-    $installer = $null
-    try {
-        # Use ProgramData instead of TEMP (TEMP can be corrupted or restricted for SYSTEM)
-        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
-        $installer = Join-Path $downloadDir 'VSCodeSetup.exe'
-        $url = 'https://code.visualstudio.com/sha/download?build=stable&os=win32-x64'
-
-        $downloadOk = $false
-        foreach ($attempt in 1..2) {
-            Write-Host "       Downloading VS Code installer (attempt $attempt)..." -ForegroundColor DarkGray
-            try {
-                Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -ErrorAction Stop
-                $downloadOk = $true
-                break
-            } catch {
-                Write-Host ("       Download attempt {0} failed: {1}" -f $attempt, $_.Exception.Message) -ForegroundColor DarkGray
-                Start-Sleep -Seconds 5
-            }
-        }
-        if (-not $downloadOk) { return $false }
-
-        # Verify the download is a valid Windows executable (MZ header) and not tiny.
-        if (Test-Path $installer) {
-            $fileInfo = Get-Item $installer
-            $minSize = 30MB
-            if ($fileInfo.Length -lt $minSize) {
-                Write-Host ("       Downloaded file too small ({0:N0} bytes), not a valid installer" -f $fileInfo.Length) -ForegroundColor DarkGray
-                return $false
-            }
-            $fs = [System.IO.File]::OpenRead($installer)
-            try {
-                $magic = New-Object byte[] 2
-                [void]$fs.Read($magic, 0, 2)
-                if ($magic[0] -ne 0x4D -or $magic[1] -ne 0x5A) {
-                    Write-Host '       Downloaded file is not a valid executable (missing MZ header)' -ForegroundColor DarkGray
-                    return $false
-                }
-            } finally { $fs.Dispose() }
-        } else {
-            return $false
-        }
-
-        Write-Host '       Installing VS Code (this may take a minute)...' -ForegroundColor DarkGray
-        $process = Start-Process -FilePath $installer `
-            -ArgumentList '/VERYSILENT', '/NORESTART', '/MERGETASKS=!runcode' `
-            -Wait -PassThru
-        if ($process.ExitCode -ne 0) {
-            Write-Host ("       VS Code installer exited with code {0}" -f $process.ExitCode) -ForegroundColor DarkGray
-            return $false
-        }
-        # Add VS Code bin dir to PATH (code.cmd lives there)
-        $codeBinDir = Join-Path $env:ProgramFiles 'Microsoft VS Code\bin'
-        if (Test-Path $codeBinDir) { Add-ToolPaths @($codeBinDir) -IncludeSystem }
-        Sync-Path
-        return $true
-    } catch {
-        Write-Host ("       VS Code installation failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
-        return $false
-    } finally {
-        if ($installer -and (Test-Path $installer)) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
-    }
-}
-
 function Install-AzureCLI {
     # Try winget first, then fall back to the official MSI.
     if (Install-WithWinget 'Microsoft.AzureCLI') { return $true }
@@ -548,9 +442,10 @@ if ($pythonMatches -and -not $Force) {
     $status = if ($pythonVersion) { 'WARN' } else { 'FAIL' }
     Add-Result 'Python' 'Core' $status $detail (Get-ManualStep 'Python')
 } else {
-    Install-Python | Out-Null
-    Sync-Path
-    $pythonVersion = Get-ToolVersion 'python' @('--version')
+    if (Install-WithWinget 'Python.Python.3.12') {
+        Sync-Path
+        $pythonVersion = Get-ToolVersion 'python' @('--version')
+    }
     # Even if 'python' still resolves to an older version, check if the
     # policy-compliant Python is available via the launcher or install paths.
     $policyPy = $null
@@ -842,7 +737,7 @@ if ($SkipOptional) {
     } elseif ($Check) {
         Add-Result 'VS Code' 'Optional' 'WARN' 'Not found' (Get-ManualStep 'VS Code')
     } else {
-        if (Install-VSCode) { $codeVersion = Get-ToolVersion 'code' @('--version') }
+        if (Install-WithWinget 'Microsoft.VisualStudioCode') { $codeVersion = Get-ToolVersion 'code' @('--version') }
         if ($codeVersion) {
             Add-Result 'VS Code' 'Optional' 'PASS' $codeVersion
         } else {
