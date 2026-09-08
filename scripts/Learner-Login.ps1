@@ -311,8 +311,8 @@ if (-not $kvFirstSuccess) {
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $spLoginResult = & az login --service-principal `
-            -u $spCreds['ARM_CLIENT_ID'] `
-            -p $spCreds['ARM_CLIENT_SECRET'] `
+            --username $spCreds['ARM_CLIENT_ID'] `
+            "--password=$($spCreds['ARM_CLIENT_SECRET'])" `
             --tenant $spCreds['ARM_TENANT_ID'] 2>&1
         $spLoginExit = $LASTEXITCODE
         $ErrorActionPreference = $prevEAP
@@ -353,8 +353,8 @@ if ($spLoginExit -ne 0) {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $loginResult = & az login --service-principal `
-        -u $spCreds['ARM_CLIENT_ID'] `
-        -p $spCreds['ARM_CLIENT_SECRET'] `
+        --username $spCreds['ARM_CLIENT_ID'] `
+        "--password=$($spCreds['ARM_CLIENT_SECRET'])" `
         --tenant $spCreds['ARM_TENANT_ID'] 2>&1
     $loginExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
