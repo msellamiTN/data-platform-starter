@@ -299,6 +299,77 @@ function Install-WithWinget {
     }
 }
 
+function Install-Python {
+    # Skip if the policy version is already available via the launcher.
+    if (Test-Tool 'py') {
+        $pyOutput = @(& py -"$($Policy.Python)" --version 2>&1)
+        if ($LASTEXITCODE -eq 0 -and "$pyOutput" -match $Policy.Python) {
+            return $true
+        }
+    }
+
+    # Try winget first, then fall back to the official python.org installer.
+    if (Install-WithWinget "Python.Python.$($Policy.Python)") { return $true }
+
+    $fullVersion = "$($Policy.Python).10"
+    $installer = $null
+    try {
+        $url = "https://www.python.org/ftp/python/$fullVersion/python-$fullVersion-amd64.exe"
+        $installer = Join-Path $env:TEMP 'PythonSetup.exe'
+        Write-Host '       Downloading Python installer...' -ForegroundColor DarkGray
+        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+
+        Write-Host '       Installing Python (this may take a minute)...' -ForegroundColor DarkGray
+        $process = Start-Process -FilePath $installer `
+            -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_launcher=1' `
+            -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            Write-Host ("       Python installer exited with code {0}" -f $process.ExitCode) -ForegroundColor DarkGray
+            return $false
+        }
+        Sync-Path
+        return $true
+    } catch {
+        Write-Host ("       Python installation failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
+        return $false
+    } finally {
+        if ($installer -and (Test-Path $installer)) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+function Install-VSCode {
+    # Try winget first, then fall back to the official system installer.
+    if (Install-WithWinget 'Microsoft.VisualStudioCode') { return $true }
+
+    $installer = $null
+    try {
+        # System-wide installer (works when running as SYSTEM)
+        $url = 'https://update.codevisualstudio.com/latest/win32-x64/stable'
+        $installer = Join-Path $env:TEMP 'VSCodeSetup.exe'
+        Write-Host '       Downloading VS Code installer...' -ForegroundColor DarkGray
+        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+
+        Write-Host '       Installing VS Code (this may take a minute)...' -ForegroundColor DarkGray
+        $process = Start-Process -FilePath $installer `
+            -ArgumentList '/VERYSILENT', '/NORESTART', '/MERGETASKS=!runcode' `
+            -Wait -PassThru
+        if ($process.ExitCode -ne 0) {
+            Write-Host ("       VS Code installer exited with code {0}" -f $process.ExitCode) -ForegroundColor DarkGray
+            return $false
+        }
+        # Add VS Code bin dir to PATH (code.cmd lives there)
+        $codeBinDir = Join-Path $env:ProgramFiles 'Microsoft VS Code\bin'
+        if (Test-Path $codeBinDir) { Add-ToolPaths @($codeBinDir) -IncludeSystem }
+        Sync-Path
+        return $true
+    } catch {
+        Write-Host ("       VS Code installation failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
+        return $false
+    } finally {
+        if ($installer -and (Test-Path $installer)) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Install-AzureCLI {
     # Try winget first, then fall back to the official MSI.
     if (Install-WithWinget 'Microsoft.AzureCLI') { return $true }
@@ -442,10 +513,9 @@ if ($pythonMatches -and -not $Force) {
     $status = if ($pythonVersion) { 'WARN' } else { 'FAIL' }
     Add-Result 'Python' 'Core' $status $detail (Get-ManualStep 'Python')
 } else {
-    if (Install-WithWinget 'Python.Python.3.12') {
-        Sync-Path
-        $pythonVersion = Get-ToolVersion 'python' @('--version')
-    }
+    Install-Python | Out-Null
+    Sync-Path
+    $pythonVersion = Get-ToolVersion 'python' @('--version')
     # Even if 'python' still resolves to an older version, check if the
     # policy-compliant Python is available via the launcher or install paths.
     $policyPy = $null
@@ -737,7 +807,7 @@ if ($SkipOptional) {
     } elseif ($Check) {
         Add-Result 'VS Code' 'Optional' 'WARN' 'Not found' (Get-ManualStep 'VS Code')
     } else {
-        if (Install-WithWinget 'Microsoft.VisualStudioCode') { $codeVersion = Get-ToolVersion 'code' @('--version') }
+        if (Install-VSCode) { $codeVersion = Get-ToolVersion 'code' @('--version') }
         if ($codeVersion) {
             Add-Result 'VS Code' 'Optional' 'PASS' $codeVersion
         } else {
