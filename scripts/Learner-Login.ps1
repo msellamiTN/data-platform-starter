@@ -169,7 +169,16 @@ $kvFirstSuccess = $false
 $spCreds = @{}
 $patValue = $null
 
-if (-not $ForceFallback -and $kvName) {
+# Check if local secrets files exist — if so, skip browser login (Mode 1)
+$localSpFile = Join-Path $projectRoot 'secrets\shared-sp.txt'
+$localPatFile = Join-Path $projectRoot 'secrets\snowflake_pat.txt'
+$hasLocalSecrets = (Test-Path $localSpFile) -and (Test-Path $localPatFile)
+
+if ($hasLocalSecrets) {
+    Write-Host '[INFO] Local secrets files found — skipping browser login, using local fallback.' -ForegroundColor Green
+}
+
+if (-not $ForceFallback -and $kvName -and -not $hasLocalSecrets) {
     Write-Host '[INFO] KV-first mode: authenticating with your AAD account...' -ForegroundColor DarkGray
     Write-Host '       A browser window will open. Login with your work/school account.' -ForegroundColor DarkGray
     Write-Host ''
