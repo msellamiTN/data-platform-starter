@@ -1,0 +1,6 @@
+﻿# Copy to terraform.tfvars and set <SNOWFLAKE_PASSWORD> from the secure value supplied outside Git\n\nsnowflake_organization = "<snowflake-organization>"
+snowflake_account      = "<snowflake-account>"
+snowflake_user         = "DATA2AI"
+snowflake_role         = "ACCOUNTADMIN"
+snowflake_password     = "<SNOWFLAKE_PASSWORD>"
+

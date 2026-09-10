@@ -1,0 +1,58 @@
+# ============================================================
+# terraform.tfvars.example — Learner Windows VMs
+# Copy to terraform.tfvars and fill in the values.
+# ============================================================
+
+# ── Azure region ──
+azure_location = "eastus"
+
+# ── Naming ──
+project_name         = "data2ai-tf-training"
+resource_group_name  = "rg-data2ai-learner-vms"
+
+# ── Learners ──
+learner_count = 12
+
+# Credentials — MUST match 01-snowflake-learners patterns exactly
+# so each learner has one unified login for both Snowflake and RDP.
+learner_username_pattern = "apprenant{i}"
+learner_password_pattern = "SnowflakeLearner2026@{i}"
+
+# ── VM sizing ──
+vm_size       = "Standard_D2ads_v7"
+windows_sku   = "win11-25h2-pro"
+os_disk_type  = "Premium_LRS"
+os_disk_size_gb = 127
+
+# ── Networking ──
+vnet_address_space       = ["10.30.0.0/16"]
+subnet_address_prefixes  = ["10.30.1.0/24"]
+
+# RDP access — restrict to the training room / VPN range
+# Example: ["82.64.12.34/32", "192.168.1.0/24"]
+rdp_allowed_source_prefixes = ["*"]
+
+# ── Repo / tools ──
+repo_url         = "https://github.com/msellamiTN/data-platform-starter.git"
+repo_local_path  = "C:\\Data2AI-Labs\\data-platform"
+install_root     = "C:\\data2ai"
+
+# ── Auto-shutdown (cost control) ──
+auto_shutdown_enabled  = true
+auto_shutdown_time     = "1900"
+auto_shutdown_timezone = "Central European Standard Time"
+
+# ── Snowflake / Azure connection info (written to config/shared.env) ──
+snowflake_organization = "orgid"
+snowflake_account      = "account"
+snowflake_user         = "TRAINING_USER"
+snowflake_role         = "SYSADMIN"
+snowflake_warehouse    = "COMPUTE_WH"
+snowflake_database     = "TRAINING_DB"
+snowflake_schema       = "PUBLIC"
+azure_tenant_id        = "00000000-0000-0000-0000-000000000000"
+key_vault_name         = "kv-data2ai-training"
+key_vault_resource_group_name = "rg-data2ai-tf-state"
+
+# ── Azure provider ──
+arm_subscription_id = "00000000-0000-0000-0000-000000000000"

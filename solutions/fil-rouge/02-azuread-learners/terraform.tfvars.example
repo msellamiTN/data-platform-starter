@@ -1,0 +1,32 @@
+# ============================================================
+# 02-azuread-learners — terraform.tfvars.example
+# ============================================================
+# Copy to terraform.tfvars (gitignored) and fill in values.
+# ============================================================
+
+# Number of learners
+learner_count = 12
+
+# Azure AD domain (verify with: az rest --method get --url 'https://graph.microsoft.com/v1.0/organization' --query 'value[0].verifiedDomains[?isDefault].name' -o tsv)
+domain = "mokhtarsellamigmail.onmicrosoft.com"
+
+# Patterns (defaults work for apprenant01-apprenant12)
+# username_pattern       = "apprenant{i}"
+# display_name_pattern   = "Apprenant {i}"
+# password_pattern       = "AzureLearner2026@{i}"
+
+# Password policy
+force_password_change = false
+
+# Security group
+group_name = "Data2AI-Learners"
+
+# RBAC
+subscription_id = "8c42d5b2-ab70-4051-ab0e-a96877557f6a"
+rbac_role       = "Reader"
+assign_rbac     = true
+
+# Key Vault access for learners (KV-first auth model)
+# Learners group gets Key Vault Secrets User to fetch SP credentials + PAT
+key_vault_id    = "/subscriptions/8c42d5b2-ab70-4051-ab0e-a96877557f6a/resourceGroups/rg-data2ai-tf-state/providers/Microsoft.KeyVault/vaults/kvdata2aitfsecretsmsn"
+grant_kv_access = true

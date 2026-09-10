@@ -1,0 +1,17 @@
+snowflake_organization = "<organization>"
+snowflake_account      = "<account>"
+snowflake_user         = "TERRAFORM_SVC"
+deployment_mode        = "production"
+private_key_path       = "../../../../secrets/snowflake_key.p8"
+environment            = "DEV"
+
+data_products = {
+  SALES = {
+    owner_team          = "TEAM_SALES"
+    data_retention_days = 1
+  }
+  FINANCE = {
+    owner_team          = "TEAM_FINANCE"
+    data_retention_days = 1
+  }
+}

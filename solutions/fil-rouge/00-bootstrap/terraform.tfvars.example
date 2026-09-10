@@ -1,0 +1,36 @@
+# ============================================================
+# 00-bootstrap — terraform.tfvars.example
+# ============================================================
+# Copy to terraform.tfvars (gitignored) and fill in values.
+# This file contains SECRETS — never commit it.
+# ============================================================
+
+# Azure region
+azure_location       = "northeurope"
+project_name         = "data2ai-tf-training"
+resource_group_name  = "rg-data2ai-tf-state"
+storage_account_name = "sadata2aitfstatemsn"
+container_name       = "tfstate"
+
+# Key Vault
+key_vault_name = "kvdata2aitfsecretsmsn"
+
+# Snowflake credentials (stored in Key Vault)
+snowflake_organization = "ZVFXOZW"
+snowflake_account      = "PM71247"
+snowflake_user         = "DATA2AI"
+snowflake_role         = "ACCOUNTADMIN"
+
+# ARM credentials for the shared service principal (stored in Key Vault)
+arm_client_id       = "<appId from az ad sp create-for-rbac>"
+arm_client_secret   = "<password from az ad sp create-for-rbac>"
+arm_tenant_id       = "55fca982-2372-4352-8b7e-c28ac00ae8e3"
+arm_subscription_id = "8c42d5b2-ab70-4051-ab0e-a96877557f6a"
+
+# Object IDs for RBAC assignments
+# Get with: az ad sp show --id <appId> --query id -o tsv
+state_blob_contributor_object_ids = ["<SP object ID>"]
+wif_service_principal_object_id   = "<SP object ID>"
+
+# Learner prefixes (for per-learner PAT secret names in Key Vault)
+snowflake_learner_prefixes = ["APP01", "APP02", "APP03", "APP04", "APP05", "APP06", "APP07", "APP08", "APP09", "APP10", "APP11", "APP12"]

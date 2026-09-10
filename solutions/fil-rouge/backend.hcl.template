@@ -1,0 +1,22 @@
+# Backend Configuration Template
+#
+# Copy this file to backend.hcl (gitignored) in your environment root directory.
+# Replace APP01 with your learner prefix and choose the environment.
+#
+# Usage:
+#   terraform init -backend-config=backend.hcl
+#
+# The backend.hcl file is gitignored and must never be committed.
+# In CI/CD pipelines, these values are injected as environment variables
+# or pipeline variables.
+
+resource_group_name  = "rg-data2ai-tf-state"
+storage_account_name = "sadata2aitfstatemsn"
+container_name       = "tfstate"
+key                  = "training/APP01/<environment>/terraform.tfstate"
+use_azuread_auth     = true
+
+# Optional for workload identity federation (CI/CD):
+# use_oidc             = true
+# subscription_id      = "<your-subscription-id>"
+# tenant_id            = "<your-tenant-id>"

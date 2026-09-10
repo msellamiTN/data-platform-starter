@@ -1,0 +1,14 @@
+# Uncomment and configure after running 00-bootstrap
+# Replace <team> with your team name (e.g. team-alpha)
+# terraform {
+#   backend "azurerm" {
+#     resource_group_name  = "rg-wevops-tf-state"
+#     storage_account_name = "sawevopstfstate"
+#     container_name       = "tfstate"
+#     key                  = "training/<team>/test/05-capstone.tfstate"
+#   }
+# }
+#
+# Alternative: use a partial backend config file (gitignored)
+#   terraform init -backend-config=backend.hcl
+# See backend.hcl.template at project root for the format.

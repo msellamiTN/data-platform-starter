@@ -1,0 +1,10 @@
+﻿# Copy to terraform.tfvars and set <SNOWFLAKE_PASSWORD> from the secure value supplied outside Git
+# Training mode uses password fallback. For production, set deployment_mode = "production".
+
+deployment_mode        = "training"
+snowflake_organization = "<snowflake-organization>"
+snowflake_account      = "<snowflake-account>"
+snowflake_user         = "DATA2AI"
+snowflake_password     = "<SNOWFLAKE_PASSWORD>"
+snowflake_role         = "ACCOUNTADMIN"
+environment            = "TEST"

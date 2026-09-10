@@ -1,0 +1,47 @@
+# ============================================================
+# 03-devops-setup — terraform.tfvars.example
+# ============================================================
+# Copy to terraform.tfvars (gitignored) and fill in values.
+#
+# Get learner_upns from 02-azuread-learners output:
+#   cd ../02-azuread-learners && terraform output -json learner_upns
+# ============================================================
+
+# Project
+project_name        = "terraform-snowflake"
+project_description = "Formation Terraform & Snowflake — Data2AI Academy"
+project_visibility  = "private"
+
+# Learners (from 02-azuread-learners output)
+learner_upns = [
+  "apprenant01@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant02@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant03@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant04@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant05@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant06@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant07@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant08@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant09@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant10@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant11@mokhtarsellamigmail.onmicrosoft.com",
+  "apprenant12@mokhtarsellamigmail.onmicrosoft.com",
+]
+
+# License type: express (basic) for pipeline execution, stakeholder for read-only
+license_type = "express"
+
+# Group
+group_name = "Contributors"
+
+# Azure service connection
+key_vault_name       = "kvdata2aitfsecrets"
+subscription_id      = "8c42d5b2-ab70-4051-ab0e-a96877557f6a"
+subscription_name    = "Data2AI-Training"
+tenant_id            = "55fca982-2372-4352-8b7e-c28ac00ae8e3"
+service_endpoint_name = "AzureKeyVault-Connection"
+auth_scheme          = "WorkloadIdentityFederation"
+
+# Variable group
+variable_group_name = "data-platform-secrets"
+kv_secret_variables = ["SnowflakePAT", "ArmClientSecret"]

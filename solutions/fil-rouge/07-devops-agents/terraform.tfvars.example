@@ -1,0 +1,10 @@
+# ─── Azure DevOps configuration ───
+azuredevops_org_url = "https://dev.azure.com/mokhtarsellami0877"
+azuredevops_pat     = "YOUR_PAT_TOKEN_HERE"
+
+# ─── VM configuration ───
+admin_password = "YourComplexP@ssw0rd!"
+
+# ─── Agent pool ───
+agent_pool_name = "azure-vm-agents"
+agent_name      = "windows-vm-agent"

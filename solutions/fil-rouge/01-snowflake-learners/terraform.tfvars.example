@@ -1,0 +1,31 @@
+# ============================================================
+# 01-snowflake-learners — terraform.tfvars.example
+# ============================================================
+# Copy to terraform.tfvars (gitignored) and fill in values.
+# Get key_vault_id from 00-bootstrap output:
+#   cd ../00-bootstrap && terraform output -raw key_vault_id
+# ============================================================
+
+# Number of learners
+learner_count = 12
+
+# Patterns (defaults work for APP01-APP12 / apprenant01-apprenant12)
+# learner_prefix_pattern    = "APP{i}"
+# learner_username_pattern  = "apprenant{i}"
+# learner_password_pattern  = "SnowflakeLearner2026@{i}"
+
+# Role and MFA
+default_role       = "SYSADMIN"
+mins_to_bypass_mfa = 240
+must_change_password = false
+
+# Snowflake instructor connection (Enterprise account, ACCOUNTADMIN)
+snowflake_organization = "ZVFXOZW"
+snowflake_account      = "PM71247"
+snowflake_user         = "DATA2AI"
+snowflake_role         = "ACCOUNTADMIN"
+snowflake_token        = "<instructor PAT>"
+
+# Azure Key Vault (from 00-bootstrap)
+key_vault_id = "/subscriptions/8c42d5b2-ab70-4051-ab0e-a96877557f6a/resourceGroups/rg-data2ai-tf-state/providers/Microsoft.KeyVault/vaults/kvdata2aitfsecretsmsn"
+store_passwords_in_kv = true

@@ -1,0 +1,15 @@
+# Uncomment and configure after running 00-bootstrap
+# Replace APP01 with your learner prefix.
+# terraform {
+#   backend "azurerm" {
+#     resource_group_name  = "rg-wevops-tf-state"
+#     storage_account_name = "sawevopstfstate"
+#     container_name       = "tfstate"
+#     key                  = "training/APP01/dev/terraform.tfstate"
+#     use_azuread_auth     = true
+#   }
+# }
+#
+# Alternative: use a partial backend config file (gitignored)
+#   terraform init -backend-config=backend.hcl
+# See backend.hcl.template at project root for the format.
